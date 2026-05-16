@@ -2,3 +2,7 @@ kagglehub
 matplotlib
 pandas
 huggingface
+rich
+google-genai
+transformers
+torch
