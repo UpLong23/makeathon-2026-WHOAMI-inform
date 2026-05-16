@@ -73,10 +73,6 @@ const SIDEBAR_MAX = 300;
 const SIDEBAR_DEFAULT = 220;
 const SIDEBAR_COLLAPSE_THRESHOLD = 100;
 
-const CHAT_MIN = 300;
-const CHAT_MAX = 620;
-const CHAT_DEFAULT = 420;
-
 const BACKEND_URL = 'http://127.0.0.1:8000';
 
 const NAV_ITEMS: NavItem[] = [
@@ -103,38 +99,46 @@ function makeSessionId(): string {
 
 /* ─────────────────────────────────────────────
    useResize hook
+   
+   All mutable state lives in refs so the single mousemove/mouseup
+   listener registered on mount never goes stale. `direction` is +1
+   for handles whose panel is to the LEFT (sidebar, grows right) and
+   -1 for handles whose panel is to the RIGHT (preview, grows left).
 ───────────────────────────────────────────── */
 function useResize(
   initial: number,
   min: number,
   max: number,
-): [number, (e: MouseEvent<HTMLDivElement>) => void] {
+  direction: 1 | -1 = 1,
+): [number, (e: MouseEvent<HTMLDivElement>) => void, boolean] {
   const [width, setWidth] = useState<number>(initial);
-  const dragging = useRef<boolean>(false);
-  const startX = useRef<number>(0);
-  const startW = useRef<number>(0);
+  // isResizing is React state (not a ref) so consumers re-render when drag starts/ends
+  const [isResizing, setResizing] = useState(false);
 
-  const onMouseDown = useCallback(
-    (e: MouseEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      dragging.current = true;
-      startX.current = e.clientX;
-      startW.current = width;
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    },
-    [width],
-  );
+  // All refs — never stale inside the effect
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
+  const minRef = useRef(min);
+  const maxRef = useRef(max);
+  const dirRef = useRef(direction);
 
+  // Keep refs in sync with latest prop values without re-registering listeners
+  useEffect(() => { minRef.current = min; }, [min]);
+  useEffect(() => { maxRef.current = max; }, [max]);
+  useEffect(() => { dirRef.current = direction; }, [direction]);
+
+  // Register global listeners exactly once
   useEffect(() => {
     const onMove = (e: globalThis.MouseEvent) => {
       if (!dragging.current) return;
-      const delta = e.clientX - startX.current;
-      setWidth(Math.min(max, Math.max(min, startW.current + delta)));
+      const delta = (e.clientX - startX.current) * dirRef.current;
+      setWidth(Math.min(maxRef.current, Math.max(minRef.current, startW.current + delta)));
     };
     const onUp = () => {
       if (!dragging.current) return;
       dragging.current = false;
+      setResizing(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -144,9 +148,19 @@ function useResize(
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [min, max]);
+  }, []); // intentionally empty — refs carry all mutable state
 
-  return [width, onMouseDown];
+  const onMouseDown = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragging.current = true;
+    startX.current = e.clientX;
+    startW.current = width;
+    setResizing(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [width]);
+
+  return [width, onMouseDown, isResizing];
 }
 
 /* ─────────────────────────────────────────────
@@ -162,8 +176,8 @@ function ResizeHandle({ onMouseDown }: ResizeHandleProps) {
       onMouseDown={onMouseDown}
       className="resize-handle relative flex-shrink-0 w-1 cursor-col-resize group z-10 bg-outline hover:bg-primary transition-colors duration-150"
     >
-      <div className="absolute inset-y-0 -left-2 -right-2" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-10 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+      {/* pointer-events-none so the decorative pill never steals clicks from neighbours */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-10 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
     </div>
   );
 }
@@ -176,20 +190,19 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string>(makeSessionId);
 
   const [sidebarWidth, onSidebarResize] = useResize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX);
-  const [chatWidth, onChatResize] = useResize(CHAT_DEFAULT, CHAT_MIN, CHAT_MAX);
-
+  // FIX: preview panel uses a fixed default width and is properly constrained
+  // direction=-1 because dragging LEFT should grow the right-anchored panel
+  const [previewWidth, onPreviewResize, isResizingPreview] = useResize(480, 280, 900, -1);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<UploadedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
 
-  /* dark mode */
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
-  /* file staging */
   const addFiles = useCallback((files: FileList) => {
     Array.from(files).forEach((file) => {
       if (!ALLOWED_TYPES.includes(file.type)) return;
@@ -213,7 +226,6 @@ export default function App() {
     [selectedFile],
   );
 
-  /* new analysis — wipes backend memory and resets UI */
   const handleNewAnalysis = useCallback(() => {
     fetch(`${BACKEND_URL}/api/session/${sessionId}`, { method: 'DELETE' }).catch(() => { });
     setSessionId(makeSessionId());
@@ -224,7 +236,9 @@ export default function App() {
     setIsProcessing(false);
   }, [sessionId]);
 
-  /* send message to backend */
+  const CHARS_PER_TICK = 3;
+  const TICK_MS = 16;
+
   const handleSend = useCallback(
     (text: string, refocusTextarea: () => void) => {
       const trimmed = text.trim();
@@ -245,7 +259,55 @@ export default function App() {
       setIsProcessing(true);
 
       const aiId = Date.now() + 1;
-      let isFirstToken = true;
+
+      const receiveBuffer = { current: '' };
+      const displayBuffer = { current: '' };
+      const networkDone = { current: false };
+      const isFirstChunk = { current: true };
+      let rafHandle = 0;
+      let tickHandle = 0;
+
+      const rafFlush = () => {
+        const chunk = displayBuffer.current;
+        if (!chunk) return;
+        displayBuffer.current = '';
+
+        if (isFirstChunk.current) {
+          setIsTyping(false);
+          setMessages((prev) => [
+            ...prev,
+            { id: aiId, role: 'assistant', text: chunk, timestamp: new Date() },
+          ]);
+          isFirstChunk.current = false;
+        } else {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === aiId ? { ...m, text: m.text + chunk } : m)),
+          );
+        }
+      };
+
+      const startDrip = () => {
+        tickHandle = window.setInterval(() => {
+          if (receiveBuffer.current.length === 0) {
+            if (networkDone.current) {
+              clearInterval(tickHandle);
+              cancelAnimationFrame(rafHandle);
+              rafFlush();
+              setIsProcessing(false);
+            }
+            return;
+          }
+
+          const chars = receiveBuffer.current.slice(0, CHARS_PER_TICK);
+          receiveBuffer.current = receiveBuffer.current.slice(CHARS_PER_TICK);
+          displayBuffer.current += chars;
+
+          cancelAnimationFrame(rafHandle);
+          rafHandle = requestAnimationFrame(rafFlush);
+        }, TICK_MS);
+      };
+
+      startDrip();
 
       fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
@@ -260,31 +322,15 @@ export default function App() {
           const pump = (): Promise<void> =>
             reader.read().then(({ done, value }) => {
               if (done) {
-                setIsTyping(false);
-                setIsProcessing(false);
+                networkDone.current = true;
                 return;
               }
 
               const raw = decoder.decode(value, { stream: true });
-              const lines = raw.split('\n');
-
-              for (const line of lines) {
+              for (const line of raw.split('\n')) {
                 if (line.startsWith('data: ')) {
-                  const token = line.slice(6);
-                  if (isFirstToken) {
-                    setIsTyping(false);
-                    setMessages((prev) => [
-                      ...prev,
-                      { id: aiId, role: 'assistant', text: token, timestamp: new Date() },
-                    ]);
-                    isFirstToken = false;
-                  } else {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === aiId ? { ...m, text: m.text + token } : m,
-                      ),
-                    );
-                  }
+                  const token = line.slice(6).replace(/\\n/g, '\n');
+                  receiveBuffer.current += token;
                 }
               }
 
@@ -294,24 +340,21 @@ export default function App() {
           return pump();
         })
         .catch((err) => {
+          clearInterval(tickHandle);
+          cancelAnimationFrame(rafHandle);
+          networkDone.current = true;
           setIsTyping(false);
           setIsProcessing(false);
-          if (isFirstToken) {
+          const errMsg = `⚠️ Error: ${err.message}`;
+          if (isFirstChunk.current) {
             setMessages((prev) => [
               ...prev,
-              {
-                id: aiId,
-                role: 'assistant',
-                text: `⚠️ Error: ${err.message}`,
-                timestamp: new Date(),
-              },
+              { id: aiId, role: 'assistant', text: errMsg, timestamp: new Date() },
             ]);
           } else {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === aiId
-                  ? { ...m, text: m.text + `\n⚠️ Error: ${err.message}` }
-                  : m,
+                m.id === aiId ? { ...m, text: m.text + '\n' + errMsg } : m,
               ),
             );
           }
@@ -333,8 +376,9 @@ export default function App() {
         onNewAnalysis={handleNewAnalysis}
       />
       <ResizeHandle onMouseDown={onSidebarResize} />
+
+      {/* FIX: Chat panel takes remaining space with flex:1 and a safe min-width */}
       <ChatPanel
-        width={previewOpen ? chatWidth : undefined}
         messages={messages}
         isTyping={isTyping}
         isProcessing={isProcessing}
@@ -345,10 +389,17 @@ export default function App() {
         removeStaged={removeStaged}
         handleSend={handleSend}
       />
+
       {previewOpen && (
         <>
-          <ResizeHandle onMouseDown={onChatResize} />
-          <DocumentPreview selectedFile={selectedFile} setSelectedFile={setSelectedFile} />
+          <ResizeHandle onMouseDown={onPreviewResize} />
+          {/* FIX: Pass width correctly and use flex-shrink-0 so it holds its size */}
+          <DocumentPreview
+            width={previewWidth}
+            selectedFile={selectedFile}
+            setSelectedFile={setSelectedFile}
+            isResizing={isResizingPreview}
+          />
         </>
       )}
     </div>
@@ -407,7 +458,7 @@ function Sidebar({ width, collapsed, darkMode, onToggleDark, onNewAnalysis }: Si
       </nav>
 
       {/* Footer actions */}
-      <div className={`py-4 flex-shrink-0 border-t border-outline space-y-2 ${collapsed ? 'px-1' : 'px-3'}`}>
+      <div className={`panel-footer flex-shrink-0 border-t border-outline space-y-2 ${collapsed ? 'px-1' : 'px-3'}`}>
         {collapsed ? (
           <button
             title={darkMode ? 'Light mode' : 'Dark mode'}
@@ -472,7 +523,6 @@ function TypingIndicator() {
    ChatPanel
 ───────────────────────────────────────────── */
 interface ChatPanelProps {
-  width?: number;
   messages: Message[];
   isTyping: boolean;
   isProcessing: boolean;
@@ -485,7 +535,6 @@ interface ChatPanelProps {
 }
 
 function ChatPanel({
-  width,
   messages,
   isTyping,
   isProcessing,
@@ -536,15 +585,12 @@ function ChatPanel({
 
   const canSend = !isProcessing && (!!draft.trim() || stagedFiles.length > 0);
 
-  const panelStyle: React.CSSProperties =
-    width !== undefined ? { width, flexShrink: 0 } : { flex: 1, minWidth: CHAT_MIN };
-
   const statusDot = isTyping ? 'bg-amber-400' : 'bg-green-500';
-
   const statusLabel = isTyping ? 'Typing…' : 'Online';
 
   return (
-    <section className="flex flex-col h-full bg-surface overflow-hidden" style={panelStyle}>
+    // FIX: flex:1 with min-w-0 ensures it fills remaining space without overflowing
+    <section className="flex flex-col h-full bg-surface overflow-hidden flex-1 min-w-0">
 
       {/* ── Header ── */}
       <div className="panel-header flex items-center justify-between px-4 border-b border-outline flex-shrink-0">
@@ -568,20 +614,15 @@ function ChatPanel({
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 bg-background custom-scrollbar">
 
-        {/* ── Empty state with suggestion bubbles ── */}
         {messages.length === 0 && !isTyping && (
           <div className="flex flex-col items-center justify-center h-full gap-6 select-none">
-
-            {/* Icon + greeting */}
             <div className="flex flex-col items-center gap-2">
               <div className="w-11 h-11 rounded-2xl bg-surface-container-low border border-outline flex items-center justify-center">
                 <Sparkles size={20} className="text-on-surface-variant opacity-50" />
               </div>
               <p className="text-sm font-medium text-on-surface opacity-60">How can I help you?</p>
             </div>
-
-            {/* 2×2 suggestion bubbles */}
-            <div className="grid grid-cols-2 gap-2.5" style={{ width: '100%', maxWidth: '400px' }}>
+            <div className="grid grid-cols-2 gap-2.5 w-full" style={{ maxWidth: '400px' }}>
               {QUICK_PROMPTS.map(({ label, text }) => (
                 <button
                   key={label}
@@ -596,7 +637,6 @@ function ChatPanel({
           </div>
         )}
 
-        {/* ── Message list ── */}
         {messages.map((msg) =>
           msg.role === 'user' ? (
             <div key={msg.id} className="flex flex-col items-end">
@@ -649,114 +689,121 @@ function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      {/* Input area */}
-      <div className="px-3 pb-3 pt-2 bg-surface flex-shrink-0 w-1/2 mx-auto">
-        <div
-          className={`relative rounded-2xl transition-all duration-150 ${dragActive
-            ? 'border-2 border-dashed border-primary bg-primary/5'
-            : 'border border-outline bg-surface-container-lowest shadow-[0_2px_16px_rgba(0,0,0,0.07)] focus-within:border-primary focus-within:shadow-[0_2px_20px_rgba(0,0,0,0.11)]'
-            }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {dragActive && (
-            <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center gap-1 pointer-events-none z-10">
-              <Upload size={20} className="text-primary" />
-              <span className="text-sm font-medium text-primary">Drop to attach</span>
-              <span className="text-xs text-on-surface-variant">JPG, PNG or PDF · max 10 MB</span>
-            </div>
-          )}
+      {/* ── Input area ── */}
+      {/*
+        FIX: Replaced rigid `w-1/2 mx-auto` with a responsive container:
+        - `w-full` so it always fills the panel
+        - `max-w-2xl mx-auto` caps width at a comfortable reading measure on wide screens
+        - px-4 gives breathing room on narrow panels
+      */}
+      <div className="panel-footer px-4 bg-surface flex-shrink-0 border-t border-outline">
+        <div className="w-full max-w-2xl mx-auto">
+          <div
+            className={`relative rounded-2xl transition-all duration-150 ${dragActive
+              ? 'border-2 border-dashed border-primary bg-primary/5'
+              : 'border border-outline bg-surface-container-lowest shadow-[0_2px_16px_rgba(0,0,0,0.07)] focus-within:border-primary focus-within:shadow-[0_2px_20px_rgba(0,0,0,0.11)]'
+              }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {dragActive && (
+              <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center gap-1 pointer-events-none z-10">
+                <Upload size={20} className="text-primary" />
+                <span className="text-sm font-medium text-primary">Drop to attach</span>
+                <span className="text-xs text-on-surface-variant">JPG, PNG or PDF · max 10 MB</span>
+              </div>
+            )}
 
-          {stagedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-              {stagedFiles.map((f) => (
-                <div
-                  key={f.id}
-                  onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}
-                  className={`inline-flex items-center gap-1.5 bg-surface border rounded-lg px-2 py-1 cursor-pointer transition-colors ${selectedFile?.id === f.id
-                    ? 'border-primary/50 bg-primary/5'
-                    : 'border-outline hover:bg-surface-container-high'
-                    }`}
-                >
-                  <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}>
-                    {chipLabel(f.type)}
-                  </span>
-                  <span className="text-xs text-on-surface truncate max-w-[120px]">{f.name}</span>
-                  <button
-                    className="text-on-surface-variant hover:text-on-surface ml-0.5 transition-colors"
-                    onClick={(e: MouseEvent) => { e.stopPropagation(); removeStaged(f.id); }}
+            {stagedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+                {stagedFiles.map((f) => (
+                  <div
+                    key={f.id}
+                    onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}
+                    className={`inline-flex items-center gap-1.5 bg-surface border rounded-lg px-2 py-1 cursor-pointer transition-colors ${selectedFile?.id === f.id
+                      ? 'border-primary/50 bg-primary/5'
+                      : 'border-outline hover:bg-surface-container-high'
+                      }`}
                   >
-                    <X size={11} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                    <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}>
+                      {chipLabel(f.type)}
+                    </span>
+                    <span className="text-xs text-on-surface truncate max-w-[120px]">{f.name}</span>
+                    <button
+                      className="text-on-surface-variant hover:text-on-surface ml-0.5 transition-colors"
+                      onClick={(e: MouseEvent) => { e.stopPropagation(); removeStaged(f.id); }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
-          {/* Main row: attach | textarea | mic | send */}
-          <div className="flex items-end gap-1.5 px-2 py-2 w-full">
-            <button
-              title="Attach file"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-shrink-0 p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors"
-            >
-              <Paperclip size={17} />
-            </button>
-
-            <textarea
-              ref={textareaRef}
-              value={draft}
-              onChange={(e) => {
-                setDraft(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-              }}
-              rows={1}
-              className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 resize-none text-sm placeholder:text-on-surface-variant outline-none disabled:opacity-50 py-1.5 leading-relaxed overflow-hidden"
-              style={{ minHeight: '28px', maxHeight: '120px' }}
-              placeholder={
-                stagedFiles.length > 0
-                  ? 'Add a question about these documents…'
-                  : 'Ask anything, or drag & drop a file…'
-              }
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
-              }}
-            />
-
-            <div className="flex items-center gap-1.5 ml-auto">
+            <div className="flex items-end gap-1.5 px-2 py-2 w-full">
               <button
-                title="Voice"
+                title="Attach file"
+                onClick={() => fileInputRef.current?.click()}
                 className="flex-shrink-0 p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors"
               >
-                <Mic size={17} />
+                <Paperclip size={17} />
               </button>
 
-              <button
-                onMouseDown={(e: MouseEvent<HTMLButtonElement>) => e.preventDefault()}
-                onClick={submit}
-                disabled={!canSend}
-                className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm hover:opacity-90 active:scale-95 transition-all duration-100 disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                <Send size={14} />
-              </button>
+              <textarea
+                ref={textareaRef}
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                }}
+                rows={1}
+                className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 resize-none text-sm placeholder:text-on-surface-variant outline-none disabled:opacity-50 py-1.5 leading-relaxed overflow-hidden"
+                style={{ minHeight: '28px', maxHeight: '120px' }}
+                placeholder={
+                  stagedFiles.length > 0
+                    ? 'Add a question about these documents…'
+                    : 'Ask anything, or drag & drop a file…'
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+                }}
+              />
+
+              <div className="flex items-center gap-1.5 ml-auto">
+                <button
+                  title="Voice"
+                  className="flex-shrink-0 p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors"
+                >
+                  <Mic size={17} />
+                </button>
+
+                <button
+                  onMouseDown={(e: MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                  onClick={submit}
+                  disabled={!canSend}
+                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm hover:opacity-90 active:scale-95 transition-all duration-100 disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                  <Send size={14} />
+                </button>
+              </div>
             </div>
           </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            multiple
+            className="hidden"
+            onChange={handleFileInput}
+          />
+
+          <p className="text-[11px] text-on-surface-variant text-center mt-2">
+            AI analysis can make mistakes. Verify important information.
+          </p>
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.jpg,.jpeg,.png,.webp"
-          multiple
-          className="hidden"
-          onChange={handleFileInput}
-        />
-
-        <p className="text-[11px] text-on-surface-variant text-center mt-1.5">
-          AI analysis can make mistakes. Verify important information.
-        </p>
       </div>
 
     </section>
@@ -765,79 +812,106 @@ function ChatPanel({
 
 /* ─────────────────────────────────────────────
    DocumentPreview
+   FIX: Single clean interface, width applied via inline style,
+        PDF embed fills height with absolute positioning,
+        image is scrollable and properly contained.
 ───────────────────────────────────────────── */
 interface DocumentPreviewProps {
   selectedFile: UploadedFile | null;
   setSelectedFile: (f: UploadedFile | null) => void;
+  width: number;
+  isResizing: boolean;
 }
 
-function DocumentPreview({ selectedFile, setSelectedFile }: DocumentPreviewProps) {
+function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: DocumentPreviewProps) {
   const isPdf = selectedFile?.type === 'application/pdf';
 
   return (
-    <section className="flex-1 min-w-[180px] flex flex-col overflow-hidden bg-surface-container-low">
-      <div className="flex-1 m-4 bg-surface-container-lowest border border-outline rounded-2xl flex flex-col overflow-hidden shadow-sm">
-        <div className="preview-toolbar flex items-center justify-between px-4 border-b border-outline flex-shrink-0 bg-surface-container-lowest">
-          <div className="flex items-center gap-2 min-w-0">
-            <FileText size={16} className="text-on-surface-variant flex-shrink-0" />
-            <span className="text-sm font-medium truncate text-primary">
-              {selectedFile ? selectedFile.name : 'Document Preview'}
-            </span>
-          </div>
-          {selectedFile && (
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <a
-                href={selectedFile.url}
-                download={selectedFile.name}
-                className="p-1.5 hover:bg-surface-container-low rounded-lg transition-colors flex items-center justify-center"
-                title="Download"
-              >
-                <Download size={16} className="text-on-surface-variant" />
-              </a>
-              <button
-                onClick={() => setSelectedFile(null)}
-                className="p-1.5 hover:bg-surface-container-low rounded-lg transition-colors flex items-center justify-center"
-                title="Close preview"
-              >
-                <X size={16} className="text-on-surface-variant" />
-              </button>
-            </div>
-          )}
+    // FIX: flex-shrink-0 + explicit width via style ensures the panel holds its size
+    // and doesn't get squashed by the chat panel's flex:1
+    <section
+      className="flex flex-col h-full bg-surface border-l border-outline overflow-hidden flex-shrink-0"
+      style={{ width }}
+    >
+      {/* Toolbar */}
+      <div className="preview-toolbar flex items-center justify-between px-4 border-b border-outline flex-shrink-0 bg-surface-container-low">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText size={16} className="text-on-surface-variant flex-shrink-0" />
+          <span className="text-sm font-medium truncate text-primary">
+            {selectedFile ? selectedFile.name : 'Document Preview'}
+          </span>
         </div>
-
-        {selectedFile ? (
-          <div className="flex-1 overflow-auto p-4 flex justify-center items-start custom-scrollbar">
-            {isPdf ? (
-              <embed
-                src={selectedFile.url}
-                type="application/pdf"
-                className="preview-pdf w-full rounded-lg shadow-md border border-outline-variant"
-              />
-            ) : (
-              <img
-                src={selectedFile.url}
-                alt={selectedFile.name}
-                className="preview-image max-w-full rounded-lg shadow-md border border-outline-variant object-contain"
-              />
-            )}
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 text-on-surface-variant px-6">
-            <div className="w-14 h-14 rounded-2xl bg-surface-container-low border border-outline flex items-center justify-center">
-              <FileText size={26} className="opacity-40" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-medium">No document selected</p>
-              <p className="text-xs opacity-60 mt-1 max-w-[180px] leading-relaxed">
-                Drop a file in the chat or click a file chip to preview it here
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-xs opacity-40 font-medium">
-              <span>JPG</span><span>·</span><span>PNG</span><span>·</span><span>PDF</span>
-            </div>
+        {selectedFile && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <a
+              href={selectedFile.url}
+              download={selectedFile.name}
+              className="p-1.5 hover:bg-surface-container transition-colors flex items-center justify-center rounded-md"
+              title="Download"
+            >
+              <Download size={16} className="text-on-surface-variant" />
+            </a>
+            <button
+              onClick={() => setSelectedFile(null)}
+              className="p-1.5 hover:bg-surface-container transition-colors flex items-center justify-center rounded-md"
+              title="Close preview"
+            >
+              <X size={16} className="text-on-surface-variant" />
+            </button>
           </div>
         )}
       </div>
+
+      {/* Content */}
+      {selectedFile ? (
+        // FIX: relative container so the PDF embed can be absolutely positioned
+        <div className="flex-1 relative overflow-hidden bg-surface-container-low">
+          {isPdf ? (
+            <embed
+              key={selectedFile.url}
+              src={selectedFile.url}
+              type="application/pdf"
+              className="absolute inset-0 w-full h-full border-0"
+            />
+          ) : (
+            <div className="absolute inset-0 overflow-auto flex items-start justify-center custom-scrollbar">
+              <img
+                key={selectedFile.url}
+                src={selectedFile.url}
+                alt={selectedFile.name}
+                className="w-full object-contain block"
+                style={{ minHeight: '100%' }}
+              />
+            </div>
+          )}
+          {/*
+            Drag-intercept overlay: sits above the PDF/image only while the user is
+            actively dragging a ResizeHandle. The native PDF viewer (embed) swallows
+            mousemove/mouseup events that land inside it, so without this layer the
+            resize keeps running after the user releases the mouse over the PDF.
+            pointer-events: auto captures those events and lets the window listeners
+            in useResize handle them normally.
+          */}
+          {isResizing && (
+            <div className="absolute inset-0 z-50 cursor-col-resize" />
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-on-surface-variant px-6 bg-surface-container-low">
+          <div className="w-14 h-14 bg-surface-container border border-outline flex items-center justify-center rounded-xl">
+            <FileText size={26} className="opacity-40" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-medium">No document selected</p>
+            <p className="text-xs opacity-60 mt-1 max-w-[160px] leading-relaxed">
+              Drop a file in the chat or click a file chip to preview it here
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs opacity-40 font-medium tracking-widest uppercase">
+            <span>JPG</span><span>·</span><span>PNG</span><span>·</span><span>PDF</span>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

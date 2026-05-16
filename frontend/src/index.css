@@ -107,7 +107,6 @@
 
 /* ─────────────────────────────────────────────
    Dark mode overrides
-   Applied when .dark class is on <html> or a parent
 ───────────────────────────────────────────── */
 .dark {
   --color-background: #0a0a0a;
@@ -200,20 +199,44 @@
     touch-action: none;
   }
 
+  /* Syncs the top header strip across sidebar and chat panel —
+     same idea as panel-footer below. */
   .panel-header {
     min-height: 56px;
+  }
+
+  /* Syncs the bottom footer strip across sidebar and chat input bar.
+     Height derivation (sidebar footer):
+       py-4           = 16px top + 16px bottom  = 32px
+       button 1       = py-2 (16px) + text-sm lh (20px) = 36px
+       space-y-2 gap  = 8px
+       button 2       = py-2 (16px) + text-sm lh (20px) = 36px
+       ─────────────────────────────────────────────────────
+       total          = 32 + 36 + 8 + 36          = 112px
+
+     Both the sidebar <div> footer and the chat input wrapper
+     carry this class so they are always the same height. */
+  .panel-footer {
+    min-height: 112px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .preview-toolbar {
     min-height: 52px;
   }
 
+  /* PDF: absolute inset-0 in TSX handles sizing; just kill border */
   .preview-pdf {
-    min-height: 600px;
+    border: none;
+    display: block;
   }
 
+  /* Image: full width, natural height, no border-radius */
   .preview-image {
-    max-height: 85vh;
+    display: block;
+    border-radius: 0;
   }
 
   .chat-textarea {
