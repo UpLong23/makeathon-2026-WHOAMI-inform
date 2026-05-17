@@ -32,6 +32,20 @@ def _ensure_classifier():
     return _cache["classifier"]
 
 
+def _filter_referenced_docs(answer: str, metadatas: list) -> set:
+    if not answer:
+        return set()
+    answer_lower = answer.lower()
+    referenced = set()
+    for meta in metadatas:
+        for field in ["invoice_number", "vendor", "doc_id"]:
+            val = str(meta.get(field, "")).strip()
+            if val and val.lower() in answer_lower:
+                referenced.add(meta.get("filename", ""))
+                break
+    return referenced
+
+
 def post_filter_amounts(results: dict, amount_gt: Optional[float], amount_lt: Optional[float]) -> dict:
     if amount_gt is None and amount_lt is None:
         return results
@@ -117,14 +131,14 @@ def run_pipeline(
     collection=None,
     vendor_lookup: Optional[dict] = None,
     df_raw=None,
-    classifier=None,
     llm_pipe=None,
     use_gemini: bool = False,
     n_results: int = TOP_K,
+    # conversation_context: Optional[str] = None,
+    # needs_retrieval: bool = True,
 ) -> dict:
     collection, vendor_lookup, df_raw = _ensure_data()
-    if classifier is None:
-        classifier = _ensure_classifier()
+    classifier = _ensure_classifier()
 
     step_classify = {"passed": True, "message": ""}
     if classifier:
@@ -133,7 +147,7 @@ def run_pipeline(
             msg = "Query does not appear finance-related."
             print(msg)
             step_classify = {"passed": False, "message": msg}
-            return {"steps": step_classify, "answer": msg}
+            return {"steps": step_classify, "answer": msg, "docs_retrieved": set()}
 
     parsed = parse_user_query(user_query, vendor_lookup)
     step_parse = {"passed": True, "parsed": parsed}
@@ -159,14 +173,13 @@ def run_pipeline(
         except Exception as e:
             step_referee = {"called": True, "error": str(e)}
 
+    docs_retrieved = set()
+    step_retrieve = {"passed": True, "n_results": 0}
+
     output = hybrid_retrieve(user_query, collection, vendor_lookup, n_results=n_results)
     step_retrieve = {"passed": True, "n_results": len(output["results"]["ids"][0])}
-    
-    # print(output['results']['metadatas'])
-    
-    docs_retrieved = set([doc_name['filename'] for doc_name in output['results']['metadatas'][0]])
+    docs_retrieved = set([doc_name['filename'] for doc_name in output["results"]["metadatas"][0]])
     print(docs_retrieved)
-
     filenames = [m["filename"] for m in output["results"]["metadatas"][0]]
     ocr_docs = df_raw[df_raw["File Name"].isin(filenames)]["OCRed Text"].tolist()
 
@@ -177,19 +190,27 @@ def run_pipeline(
         except Exception as e:
             print(f"\n[Gemini error: {e}]")
     if answer is None:
-        if llm_pipe and ocr_docs:
+        if llm_pipe:
             docs_text = "\n---\n".join(
                 f"Document {i+1}:\n{doc[:2000]}" for i, doc in enumerate(ocr_docs)
             )
             from rag_pipeline.gemini_client import ANSWER_PROMPT
             prompt = ANSWER_PROMPT.format(user_query=user_query, documents_text=docs_text)
             messages = [{"role": "user", "content": prompt}]
-            out = llm_pipe(messages, max_new_tokens=512, temperature=0.0)
+            out = llm_pipe(messages, max_new_tokens=512, temperature=0.8)
             answer = out[0]["generated_text"][-1]["content"]
             print(answer)
         else:
-            answer = format_answer(user_query, output)
+            if output:
+                answer = format_answer(user_query, output)
+            else:
+                answer = "No documents matched your query."
             print(answer)
+
+    if answer and output:
+        filtered = _filter_referenced_docs(answer, output["results"]["metadatas"][0])
+        if filtered:
+            docs_retrieved = filtered
 
     return {
         "steps": step_classify,

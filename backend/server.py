@@ -1,27 +1,33 @@
 """
-FinDoc AI — Receipt Agent Backend
-Model : HuggingFaceTB/SmolLM2-135M-Instruct
-Server: uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+FinDoc AI — RAG Pipeline Backend
+Server: uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 """
 
 import asyncio
 import json
+import sys
 import uuid
-from collections import deque
 from datetime import datetime
-from threading import Thread
+from pathlib import Path
 from typing import AsyncGenerator
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
+
+from rag_pipeline.config import GEMINI_API_KEY
+from rag_pipeline.chroma_db import get_collection, build_vendor_lookup
+from rag_pipeline.normalize import load_and_normalize
+from rag_pipeline.config import CSV_PATH
+from rag_pipeline.pipeline import run_pipeline
 
 # ─────────────────────────────────────────────
 # App
 # ─────────────────────────────────────────────
-app = FastAPI(title="FinDoc AI — Receipt Agent")
+app = FastAPI(title="FinDoc AI — Invoice RAG Agent")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,76 +38,64 @@ app.add_middleware(
 )
 
 # ─────────────────────────────────────────────
-# Model bootstrap
+# RAG Pipeline bootstrap
 # ─────────────────────────────────────────────
-MODEL_NAME = "HuggingFaceTB/SmolLM2-135M-Instruct"
+print("Loading RAG pipeline components", flush=True)
 
-print(f"Loading '{MODEL_NAME}'…")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
-print("Model ready.")
+collection = get_collection()
+new_df, df_raw = load_and_normalize(CSV_PATH)
+vendor_lookup = build_vendor_lookup(new_df)
+print(f"  Collection '{collection.name}': {collection.count()} vectors", flush=True)
+print(f"  Data: {len(new_df)} invoices, {len(vendor_lookup)} vendors", flush=True)
 
-# ─────────────────────────────────────────────
-# System prompt
-# ─────────────────────────────────────────────
-SYSTEM_PROMPT = """\
-You are FinDoc, a precise and friendly receipt & expense assistant.
+classifier = None
+try:
+    from rag_pipeline.models import get_classifier
+    classifier = get_classifier()
+    print("  Classifier loaded", flush=True)
+except Exception as e:
+    print(f"  Classifier skipped: {e}", flush=True)
 
-Your capabilities:
-- Parse receipt data (items, prices, quantities, dates, vendors)
-- Calculate totals, subtotals, taxes, tips, and discounts
-- Split bills between people (equal or custom splits)
-- Track multiple receipts across a session and compare them
-- Detect duplicate charges or anomalies
-- Summarize expenses by category (food, transport, utilities, etc.)
-- Convert currencies when asked
+use_gemini = False
+if GEMINI_API_KEY:
+    try:
+        from rag_pipeline.gemini_client import get_client
+        get_client()
+        use_gemini = True
+        print("  Gemini client ready", flush=True)
+    except Exception as e:
+        print(f"  Gemini skipped: {e}", flush=True)
+else:
+    print("  Gemini not configured (set GEMINI_API_KEY)", flush=True)
 
-Rules:
-- Always show your math step by step when calculating
-- Format monetary values consistently (e.g. €12.50 or $12.50)
-- If the user pastes raw receipt text, extract all line items into a clean table
-- Remember every receipt and expense mentioned in this conversation
-- If asked "what have I spent so far?", total everything from the session
-- Be concise. No filler. Numbers first, explanation second.
-"""
+llm_pipe = None
+try:
+    from transformers import pipeline as hf_pipeline
+    llm_pipe = hf_pipeline(
+        "text-generation",
+        model="HuggingFaceTB/SmolLM2-135M-Instruct",
+        device="cpu",
+    )
+    print("  Local LLM pipeline loaded", flush=True)
+except Exception as e:
+    print(f"  Local LLM skipped: {e}", flush=True)
+
+KAGGLE_FILE_DIR = CSV_PATH.parent / "batch1_1"
+print(f"  File directory: {KAGGLE_FILE_DIR}", flush=True)
+
+print("RAG pipeline ready.\n", flush=True)
 
 # ─────────────────────────────────────────────
 # Session store
 # ─────────────────────────────────────────────
-MAX_PAIRS = 12
-MAX_RECEIPTS = 50
-
-# How many tokens to accumulate before flushing a chunk to the client.
-# Larger = fewer round-trips, smoother rendering; too large = choppy start.
-TOKEN_BATCH_SIZE = 1
-
-
 class Session:
     def __init__(self):
-        self.history: deque = deque(maxlen=MAX_PAIRS * 2)
-        self.receipts: list[dict] = []
-        self.summary: str = ""
         self.created: str = datetime.utcnow().isoformat()
-        self.total_spent: float = 0.0
-
-    def add_receipt(self, receipt: dict) -> None:
-        self.receipts.append(receipt)
-        self.total_spent += receipt.get("total", 0.0)
-
-    def session_context(self) -> str:
-        parts: list[str] = []
-        if self.summary:
-            parts.append(f"[EARLIER IN THIS SESSION]\n{self.summary}")
-        if self.receipts:
-            lines = [f"[RECEIPTS TRACKED THIS SESSION — running total: {self.total_spent:.2f}]"]
-            for i, r in enumerate(self.receipts, 1):
-                vendor = r.get("vendor", "Unknown")
-                date   = r.get("date", "")
-                total  = r.get("total", 0.0)
-                lines.append(f"  {i}. {vendor}{' (' + date + ')' if date else ''} — {total:.2f}")
-            parts.append("\n".join(lines))
-        return "\n\n".join(parts)
-
+        self.history: list[dict] = []
+        self.last_query: str = ""
+        self.last_answer: str = ""
+        self.last_files: list[dict] = []
+        self.open_files: dict[str, str] = {}  # filename → OCR text
 
 _sessions: dict[str, Session] = {}
 
@@ -112,32 +106,25 @@ def _get_session(session_id: str) -> Session:
     return _sessions[session_id]
 
 
-def _build_messages(session: Session, user_message: str) -> list[dict]:
-    ctx = session.session_context()
-    system_content = SYSTEM_PROMPT
-    if ctx:
-        system_content += f"\n\n{ctx}"
-    messages = [{"role": "system", "content": system_content}]
-    messages += list(session.history)
-    messages.append({"role": "user", "content": user_message})
-    return messages
+# def _build_history_context(session: Session) -> str:
+#     parts = ["--- Previous conversation ---"]
+#     for msg in session.history[-6:]:
+#         label = "Q" if msg["role"] == "user" else "A"
+#         parts.append(f"{label}: {msg['content'][:500]}")
+#     parts.append("--- End of previous conversation ---")
+#     return "\n".join(parts)
 
 
-def _maybe_compress(session: Session) -> None:
-    if len(session.history) < MAX_PAIRS * 2:
-        return
-    temp = list(session.history)
-    oldest = []
-    for msg in temp[:4]:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        oldest.append(f"{role}: {msg['content'][:300]}")
-    snippet = "\n".join(oldest)
-    if session.summary:
-        session.summary += "\n" + snippet
-    else:
-        session.summary = snippet
-    if len(session.summary) > 1200:
-        session.summary = "…" + session.summary[-1200:]
+def _needs_retrieval(query: str, classifier) -> bool:
+    q = query.lower().strip()
+    social = {"thanks", "thank", "ok", "okay", "yes", "no", "bye", "hello", "hi",
+              "great", "perfect", "understood", "got it", "cool", "nice"}
+    if q.split() and q.split()[0].lower().rstrip("!.,") in social and len(q.split()) <= 3:
+        return False
+    if classifier:
+        from rag_pipeline.referee import classify_finance
+        return classify_finance([query], classifier)[0]
+    return True
 
 
 # ─────────────────────────────────────────────
@@ -146,14 +133,7 @@ def _maybe_compress(session: Session) -> None:
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str = Field(default="default_user", min_length=1)
-
-
-class AddReceiptRequest(BaseModel):
-    session_id: str
-    vendor: str = ""
-    date: str = ""
-    total: float = 0.0
-    items: list[dict] = []
+    model: str = Field(default="auto", pattern=r"^(auto|gemini|local)$")
 
 
 class NewSessionResponse(BaseModel):
@@ -162,83 +142,137 @@ class NewSessionResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    model: str
+    pipeline: str
+    vectors: int
+    vendors: int
+    gemini_available: bool
+    local_available: bool
 
 
 class SessionInfoResponse(BaseModel):
     session_id: str
     created: str
     message_count: int
-    receipt_count: int
-    total_spent: float
-    has_summary: bool
+
+
+class OpenFileRequest(BaseModel):
+    filename: str = Field(..., min_length=1)
 
 
 # ─────────────────────────────────────────────
-# Streaming generator  ← key changes here
+# Streaming generator
 # ─────────────────────────────────────────────
-async def _stream_response(message: str, session_id: str) -> AsyncGenerator[str, None]:
+async def _stream_rag_response(message: str, session_id: str, model: str = "auto") -> AsyncGenerator[str, None]:
     session = _get_session(session_id)
 
-    try:
-        _maybe_compress(session)
-        messages = _build_messages(session, message)
+    use_gemini_for_request = use_gemini
+    llm_pipe_for_request = llm_pipe
+    if model == "gemini":
+        use_gemini_for_request = True
+        llm_pipe_for_request = None
+    elif model == "local":
+        use_gemini_for_request = False
 
-        input_text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = tokenizer([input_text], return_tensors="pt")
-
-        streamer = TextIteratorStreamer(
-            tokenizer, skip_prompt=True, skip_special_tokens=True
-        )
-        generation_kwargs = dict(
-            **inputs,
-            streamer=streamer,
-            max_new_tokens=400,
-            temperature=0.3,
-            do_sample=True,
-            repetition_penalty=1.1,
-        )
-
-        thread = Thread(target=model.generate, kwargs=generation_kwargs, daemon=True)
-        thread.start()
-
-        full_response: list[str] = []
-        batch: list[str] = []
-
-        for token in streamer:
-            if not token:
-                continue
-
-            full_response.append(token)
-            batch.append(token)
-
-            # Flush every TOKEN_BATCH_SIZE tokens so the client receives
-            # small, frequent chunks instead of one-token-per-frame.
-            if len(batch) >= TOKEN_BATCH_SIZE:
-                chunk = "".join(batch)
+    # ── Memory path: file chip is open, answer from OCR text ──
+    if session.open_files:
+        from rag_pipeline.gemini_client import ANSWER_PROMPT
+        docs_text = "\n---\n".join(session.open_files.values())
+        if session.last_query:
+            docs_text += f"\n\n---\nPrevious context — the user asked: {session.last_query}"
+        prompt = ANSWER_PROMPT.format(user_query=message, documents_text=docs_text)
+        answer = None
+        if use_gemini_for_request:
+            try:
+                from rag_pipeline.gemini_client import answer_query as gemini_answer
+                answer = gemini_answer(message, list(session.open_files.values()))
+            except Exception as e:
+                print(f"\n[Gemini error: {e}]")
+        if answer is None and llm_pipe_for_request:
+            messages = [{"role": "user", "content": prompt}]
+            out = llm_pipe_for_request(messages, max_new_tokens=512, temperature=0.8)
+            answer = out[0]["generated_text"][-1]["content"]
+            print(answer)
+        if answer is None:
+            answer = "No answer could be generated from the open document."
+        words = answer.split(" ")
+        batch = []
+        for word in words:
+            batch.append(word)
+            if len(batch) >= 5:
+                yield f"data: {' '.join(batch)}\n\n"
                 batch = []
-                # Escape newlines so a single SSE "data:" line carries the chunk.
+                await asyncio.sleep(0)
+        if batch:
+            yield f"data: {' '.join(batch)}\n\n"
+        session.history.append({"role": "user", "content": message})
+        session.history.append({"role": "assistant", "content": answer})
+        session.last_query = message
+        session.last_answer = answer
+        return
+
+    # ── Normal pipeline path ──
+    # history_context = _build_history_context(session)
+    # conversation_context = history_context if history_context else None
+
+    retrieval_needed = _needs_retrieval(message, classifier)
+
+    try:
+        result = run_pipeline(
+            message,
+            llm_pipe=llm_pipe_for_request,
+            use_gemini=use_gemini_for_request,
+            # conversation_context=conversation_context,
+            # needs_retrieval=retrieval_needed,
+        )
+
+        answer = result.get("answer", "No answer generated.")
+        steps = result.get("steps", {})
+
+        docs_retrieved = result.get("docs_retrieved", set())
+        files_list = []
+        if docs_retrieved:
+            files_list = [
+                {
+                    "id": idx + 1,
+                    "name": fname,
+                    "type": "image/jpeg",
+                    "url": f"/api/files/{fname}",
+                }
+                for idx, fname in enumerate(sorted(docs_retrieved))
+            ]
+            yield f"data: __files__{json.dumps(files_list)}\n\n"
+
+        if not steps.get("passed", True):
+            escaped = answer.replace("\n", "\\n")
+            yield f"data: {escaped}\n\n"
+            session.history.append({"role": "user", "content": message})
+            session.history.append({"role": "assistant", "content": answer})
+            return
+
+        words = answer.split(" ")
+        batch = []
+        for word in words:
+            batch.append(word)
+            if len(batch) >= 5:
+                chunk = " ".join(batch)
                 escaped = chunk.replace("\n", "\\n")
                 yield f"data: {escaped}\n\n"
-                # Yield control to the event loop without a sleep penalty.
+                batch = []
                 await asyncio.sleep(0)
 
-        # Flush any remaining tokens
         if batch:
-            chunk = "".join(batch)
+            chunk = " ".join(batch)
             escaped = chunk.replace("\n", "\\n")
             yield f"data: {escaped}\n\n"
-            await asyncio.sleep(0)
 
-        reply = "".join(full_response).strip()
-        if reply:
-            session.history.append({"role": "user",      "content": message})
-            session.history.append({"role": "assistant", "content": reply})
+        session.last_query = message
+        session.last_answer = answer
+        session.last_files = files_list if docs_retrieved else []
+        session.history.append({"role": "user", "content": message})
+        session.history.append({"role": "assistant", "content": answer})
 
     except Exception as exc:
-        yield f"data: ⚠️ Generation error: {exc}\n\n"
+        yield f"data: \u26a0\ufe0f Pipeline error: {exc}\n\n"
 
 
 # ─────────────────────────────────────────────
@@ -246,7 +280,22 @@ async def _stream_response(message: str, session_id: str) -> AsyncGenerator[str,
 # ─────────────────────────────────────────────
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok", model=MODEL_NAME)
+    return HealthResponse(
+        status="ok",
+        pipeline="rag_pipeline",
+        vectors=collection.count(),
+        vendors=len(vendor_lookup),
+        gemini_available=use_gemini,
+        local_available=llm_pipe is not None,
+    )
+
+
+@app.get("/api/files/{filename:path}")
+async def get_file(filename: str):
+    file_path = KAGGLE_FILE_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(file_path))
 
 
 @app.post("/api/session", response_model=NewSessionResponse)
@@ -265,9 +314,6 @@ async def session_info(session_id: str) -> SessionInfoResponse:
         session_id=session_id,
         created=s.created,
         message_count=len(s.history),
-        receipt_count=len(s.receipts),
-        total_spent=s.total_spent,
-        has_summary=bool(s.summary),
     )
 
 
@@ -276,29 +322,24 @@ async def clear_session(session_id: str) -> None:
     _sessions.pop(session_id, None)
 
 
-@app.post("/api/session/{session_id}/receipt", status_code=201)
-async def add_receipt(session_id: str, body: AddReceiptRequest) -> dict:
+@app.post("/api/session/{session_id}/open-file")
+async def open_file(session_id: str, body: OpenFileRequest) -> dict:
     session = _get_session(session_id)
-    receipt = {
-        "vendor": body.vendor,
-        "date":   body.date,
-        "total":  body.total,
-        "items":  body.items,
-    }
-    session.add_receipt(receipt)
-    return {"receipt_count": len(session.receipts), "total_spent": session.total_spent}
+    match = df_raw[df_raw["File Name"] == body.filename]
+    if match.empty:
+        raise HTTPException(status_code=404, detail="File not found")
+    ocr_text = str(match.iloc[0].get("OCRed Text", ""))
+    if not ocr_text or ocr_text in ("nan", "None", ""):
+        raise HTTPException(status_code=404, detail="No OCR text for this file")
+    session.open_files[body.filename] = ocr_text
+    return {"status": "ok", "open_files": len(session.open_files)}
 
 
-@app.get("/api/session/{session_id}/receipts")
-async def get_receipts(session_id: str) -> dict:
-    if session_id not in _sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    s = _sessions[session_id]
-    return {
-        "receipts":    s.receipts,
-        "total_spent": s.total_spent,
-        "count":       len(s.receipts),
-    }
+@app.post("/api/session/{session_id}/close-file")
+async def close_file(session_id: str, body: OpenFileRequest) -> dict:
+    session = _get_session(session_id)
+    session.open_files.pop(body.filename, None)
+    return {"status": "ok", "open_files": len(session.open_files)}
 
 
 @app.post("/api/chat")
@@ -306,11 +347,11 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     if not request.message.strip():
         raise HTTPException(status_code=422, detail="message must not be blank")
     return StreamingResponse(
-        _stream_response(request.message.strip(), request.session_id),
+        _stream_rag_response(request.message.strip(), request.session_id, request.model),
         media_type="text/event-stream",
         headers={
             "X-Accel-Buffering": "no",
-            "Cache-Control":     "no-cache",
+            "Cache-Control": "no-cache",
         },
     )
 

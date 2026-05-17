@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Download,
   FileText,
@@ -198,6 +200,28 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<UploadedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
+  const [model, setModel] = useState<'auto' | 'gemini' | 'local'>('auto');
+
+  // Track file chip open/close for backend memory mode
+  const prevSelectedFile = useRef<UploadedFile | null>(null);
+  useEffect(() => {
+    const prev = prevSelectedFile.current;
+    if (prev && (!selectedFile || selectedFile.name !== prev.name)) {
+      fetch(`${BACKEND_URL}/api/session/${sessionId}/close-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: prev.name }),
+      }).catch(() => {});
+    }
+    if (selectedFile && (!prev || selectedFile.name !== prev.name)) {
+      fetch(`${BACKEND_URL}/api/session/${sessionId}/open-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: selectedFile.name }),
+      }).catch(() => {});
+    }
+    prevSelectedFile.current = selectedFile;
+  }, [selectedFile, sessionId]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -264,6 +288,7 @@ export default function App() {
       const displayBuffer = { current: '' };
       const networkDone = { current: false };
       const isFirstChunk = { current: true };
+      const pendingFiles: { current: UploadedFile[] } = { current: [] };
       let rafHandle = 0;
       let tickHandle = 0;
 
@@ -276,7 +301,13 @@ export default function App() {
           setIsTyping(false);
           setMessages((prev) => [
             ...prev,
-            { id: aiId, role: 'assistant', text: chunk, timestamp: new Date() },
+            {
+              id: aiId,
+              role: 'assistant',
+              text: chunk,
+              timestamp: new Date(),
+              files: pendingFiles.current.length > 0 ? pendingFiles.current : undefined,
+            },
           ]);
           isFirstChunk.current = false;
         } else {
@@ -312,7 +343,7 @@ export default function App() {
       fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, session_id: sessionId }),
+        body: JSON.stringify({ message: trimmed, session_id: sessionId, model }),
       })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -328,6 +359,16 @@ export default function App() {
 
               const raw = decoder.decode(value, { stream: true });
               for (const line of raw.split('\n')) {
+                if (line.startsWith('data: __files__')) {
+                  try {
+                    const files: UploadedFile[] = JSON.parse(line.slice(15));
+                    pendingFiles.current = files.map((f) => ({
+                      ...f,
+                      url: f.url.startsWith('http') ? f.url : `${BACKEND_URL}${f.url}`,
+                    }));
+                  } catch { /* ignore malformed */ }
+                  continue;
+                }
                 if (line.startsWith('data: ')) {
                   const token = line.slice(6).replace(/\\n/g, '\n');
                   receiveBuffer.current += token;
@@ -349,7 +390,13 @@ export default function App() {
           if (isFirstChunk.current) {
             setMessages((prev) => [
               ...prev,
-              { id: aiId, role: 'assistant', text: errMsg, timestamp: new Date() },
+              {
+                id: aiId,
+                role: 'assistant',
+                text: errMsg,
+                timestamp: new Date(),
+                files: pendingFiles.current.length > 0 ? pendingFiles.current : undefined,
+              },
             ]);
           } else {
             setMessages((prev) =>
@@ -360,7 +407,7 @@ export default function App() {
           }
         });
     },
-    [stagedFiles, sessionId],
+    [stagedFiles, sessionId, model],
   );
 
   const collapsed = sidebarWidth < SIDEBAR_COLLAPSE_THRESHOLD;
@@ -388,6 +435,8 @@ export default function App() {
         addFiles={addFiles}
         removeStaged={removeStaged}
         handleSend={handleSend}
+        model={model}
+        onModelChange={setModel}
       />
 
       {previewOpen && (
@@ -532,6 +581,8 @@ interface ChatPanelProps {
   addFiles: (files: FileList) => void;
   removeStaged: (id: number) => void;
   handleSend: (text: string, refocus: () => void) => void;
+  model: 'auto' | 'gemini' | 'local';
+  onModelChange: (m: 'auto' | 'gemini' | 'local') => void;
 }
 
 function ChatPanel({
@@ -544,6 +595,8 @@ function ChatPanel({
   addFiles,
   removeStaged,
   handleSend,
+  model,
+  onModelChange,
 }: ChatPanelProps) {
   const [draft, setDraft] = useState('');
   const [dragActive, setDragActive] = useState<boolean>(false);
@@ -606,9 +659,26 @@ function ChatPanel({
             </p>
           </div>
         </div>
-        <button className="flex-shrink-0 p-1.5 hover:bg-surface-container-low rounded-full transition-colors">
-          <MoreVertical size={16} className="text-on-surface-variant" />
-        </button>
+        <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 border border-outline rounded-lg overflow-hidden flex-shrink-0">
+            {(['auto', 'gemini', 'local'] as const).map((opt) => (
+              <button
+                key={opt}
+                onClick={() => onModelChange(opt)}
+                className={`px-2 py-1 text-[11px] font-medium leading-none transition-colors ${
+                  model === opt
+                    ? 'bg-primary text-on-primary'
+                    : 'text-on-surface-variant hover:bg-surface-container'
+                }`}
+              >
+                {opt === 'auto' ? 'Auto' : opt === 'gemini' ? 'Gemini' : 'Local'}
+              </button>
+            ))}
+          </div>
+          <button className="flex-shrink-0 p-1.5 hover:bg-surface-container-low rounded-full transition-colors">
+            <MoreVertical size={16} className="text-on-surface-variant" />
+          </button>
+        </div>
       </div>
 
       {/* ── Messages ── */}
@@ -674,8 +744,29 @@ function ChatPanel({
                 <div className="w-7 h-7 rounded-full border border-outline bg-surface-container-lowest flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
                   <Sparkles size={13} className="text-primary" />
                 </div>
-                <div className="bg-surface-container-lowest border border-outline px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm">
-                  <p className="text-sm leading-relaxed text-on-surface whitespace-pre-wrap">{msg.text}</p>
+                <div className="flex flex-col gap-1.5">
+                  {msg.files && msg.files.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {msg.files.map((f) => (
+                        <button
+                          key={f.id}
+                          onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}
+                          className={`inline-flex items-center gap-1.5 border rounded-lg px-2 py-1 transition-colors ${selectedFile?.id === f.id
+                            ? 'border-primary/50 bg-primary/10'
+                            : 'border-outline bg-surface hover:bg-surface-container-high'
+                          }`}
+                        >
+                          <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}>
+                            {chipLabel(f.type)}
+                          </span>
+                          <span className="text-xs text-on-surface truncate max-w-[110px]">{f.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="bg-surface-container-lowest border border-outline px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm text-on-surface markdown-body">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+                  </div>
                 </div>
               </div>
               <span className="text-[11px] text-on-surface-variant mt-1 ml-9 tracking-wide">
