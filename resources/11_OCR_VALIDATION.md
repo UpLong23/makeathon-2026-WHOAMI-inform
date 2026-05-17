@@ -17,15 +17,6 @@ Validated OCR text extraction from invoices using ground truth data and model pr
 
 
 ---
-"""You are a senior Python production engineer. Your task is to take an input Jupyter notebook (.ipynb) and convert it into a clean, minimal, deployable Python codebase.
-
-Goal
-The notebook currently contains a full pipeline that:
-- accepts an image in .jpeg
-- uses Tesseract OCR to extract text
-- sends the OCR text to another LLM that converts it into a required JSON structure
-- also contains validation code and likely unnecessary helper functions
-
 
 ## Validation Methodology
 
