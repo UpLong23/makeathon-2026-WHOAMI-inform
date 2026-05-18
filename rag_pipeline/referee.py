@@ -1,7 +1,7 @@
 import json
 from typing import Any, Optional
 
-from rag_pipeline.config import CLASSIFIER_MODEL
+# from rag_pipeline.config import CLASSIFIER_MODEL
 
 
 def classify_finance(queries: list[str], classifier=None, threshold: float = 0.59) -> list[bool]:

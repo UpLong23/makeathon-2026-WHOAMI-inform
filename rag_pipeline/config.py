@@ -3,13 +3,14 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-KAGGLE_PATH = Path.home() / ".cache" / "kagglehub" / "datasets" / "osamahosamabdellatif" / "high-quality-invoice-images-for-ocr" / "versions" / "3"
-CSV_PATH = KAGGLE_PATH / "batch_1" / "batch_1" / "batch1_1.csv"
+# KAGGLE_PATH = Path.home() / ".cache" / "kagglehub" / "datasets" / "osamahosamabdellatif" / "high-quality-invoice-images-for-ocr" / "versions" / "3"
+# CSV_PATH = KAGGLE_PATH / "batch_1" / "batch_1" / "batch1_1.csv"
+CSV_PATH = BASE_DIR.parent / "batch_1" / "batch_1" / "batch1_1.csv"
 CHROMA_PATH = BASE_DIR / "invoices_chroma_db"
 COLLECTION_NAME = "invoices"
 
-EMBED_MODEL = "FinLang/finance-embeddings-investopedia"
-EMBED_DEVICE = "cpu"
+# EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+# EMBED_DEVICE = "cpu"
 CLASSIFIER_MODEL = "facebook/bart-large-mnli"
 BATCH_SIZE = 64
 TOP_K = 5

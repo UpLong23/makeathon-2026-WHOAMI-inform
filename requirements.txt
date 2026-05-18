@@ -3,6 +3,8 @@ matplotlib
 pandas
 huggingface
 rich
+chromadb
+sentence_transformers
 google-genai
 transformers
 torch

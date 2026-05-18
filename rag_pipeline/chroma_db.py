@@ -1,9 +1,9 @@
 import pandas as pd
 import chromadb
 
+# from rag_pipeline.models import FinLangEmbeddingFunction
 from rag_pipeline.config import CHROMA_PATH, COLLECTION_NAME
-from rag_pipeline.models import FinLangEmbeddingFunction
-
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
 _client = None
 
@@ -14,10 +14,19 @@ def get_client():
     return _client
 
 
+# def get_collection():
+#     return get_client().get_or_create_collection(
+#         name=COLLECTION_NAME,
+#         embedding_function=FinLangEmbeddingFunction(),
+#         metadata={"hnsw:space": "cosine"},
+#     )
+
+
+
 def get_collection():
     return get_client().get_or_create_collection(
         name=COLLECTION_NAME,
-        embedding_function=FinLangEmbeddingFunction(),
+        embedding_function=ONNXMiniLM_L6_V2(),
         metadata={"hnsw:space": "cosine"},
     )
 
