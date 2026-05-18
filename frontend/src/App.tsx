@@ -5,6 +5,7 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Download,
   FileText,
@@ -55,7 +56,7 @@ interface Message {
 interface NavItem {
   icon: LucideIcon;
   label: string;
-  active: boolean;
+  to: string;
 }
 
 /* ─────────────────────────────────────────────
@@ -78,10 +79,10 @@ const SIDEBAR_COLLAPSE_THRESHOLD = 100;
 const BACKEND_URL = 'http://127.0.0.1:8000';
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: LayoutDashboard, label: 'Dashboard', active: false },
-  { icon: MessageSquare, label: 'Chat Assistant', active: true },
-  { icon: Landmark, label: 'Reconciliation', active: false },
-  { icon: Settings, label: 'Settings', active: false },
+  { icon: LayoutDashboard, label: 'Dashboard', to: '/dashboard' },
+  { icon: MessageSquare, label: 'Chat Assistant', to: '/chat' },
+  { icon: Landmark, label: 'Reconciliation', to: '/reconciliation' },
+  { icon: Settings, label: 'Settings', to: '/settings' },
 ];
 
 const QUICK_PROMPTS: { label: string; text: string }[] = [
@@ -101,11 +102,6 @@ function makeSessionId(): string {
 
 /* ─────────────────────────────────────────────
    useResize hook
-   
-   All mutable state lives in refs so the single mousemove/mouseup
-   listener registered on mount never goes stale. `direction` is +1
-   for handles whose panel is to the LEFT (sidebar, grows right) and
-   -1 for handles whose panel is to the RIGHT (preview, grows left).
 ───────────────────────────────────────────── */
 function useResize(
   initial: number,
@@ -114,10 +110,8 @@ function useResize(
   direction: 1 | -1 = 1,
 ): [number, (e: MouseEvent<HTMLDivElement>) => void, boolean] {
   const [width, setWidth] = useState<number>(initial);
-  // isResizing is React state (not a ref) so consumers re-render when drag starts/ends
   const [isResizing, setResizing] = useState(false);
 
-  // All refs — never stale inside the effect
   const dragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(0);
@@ -125,12 +119,10 @@ function useResize(
   const maxRef = useRef(max);
   const dirRef = useRef(direction);
 
-  // Keep refs in sync with latest prop values without re-registering listeners
   useEffect(() => { minRef.current = min; }, [min]);
   useEffect(() => { maxRef.current = max; }, [max]);
   useEffect(() => { dirRef.current = direction; }, [direction]);
 
-  // Register global listeners exactly once
   useEffect(() => {
     const onMove = (e: globalThis.MouseEvent) => {
       if (!dragging.current) return;
@@ -150,7 +142,7 @@ function useResize(
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, []); // intentionally empty — refs carry all mutable state
+  }, []);
 
   const onMouseDown = useCallback((e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -178,7 +170,6 @@ function ResizeHandle({ onMouseDown }: ResizeHandleProps) {
       onMouseDown={onMouseDown}
       className="resize-handle relative flex-shrink-0 w-1 cursor-col-resize group z-10 bg-outline hover:bg-primary transition-colors duration-150"
     >
-      {/* pointer-events-none so the decorative pill never steals clicks from neighbours */}
       <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-10 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
     </div>
   );
@@ -188,13 +179,13 @@ function ResizeHandle({ onMouseDown }: ResizeHandleProps) {
    App
 ───────────────────────────────────────────── */
 export default function App() {
-  const [darkMode, setDarkMode] = useState(false);
-  const [sessionId, setSessionId] = useState<string>(makeSessionId);
+  const [darkMode, setDarkMode] = useState(
+    () => localStorage.getItem('theme') === 'dark'
+  ); const [sessionId, setSessionId] = useState<string>(makeSessionId);
 
   const [sidebarWidth, onSidebarResize] = useResize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX);
-  // FIX: preview panel uses a fixed default width and is properly constrained
-  // direction=-1 because dragging LEFT should grow the right-anchored panel
   const [previewWidth, onPreviewResize, isResizingPreview] = useResize(480, 280, 900, -1);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -202,7 +193,6 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
   const [model, setModel] = useState<'auto' | 'gemini' | 'local'>('auto');
 
-  // Track file chip open/close for backend memory mode
   const prevSelectedFile = useRef<UploadedFile | null>(null);
   useEffect(() => {
     const prev = prevSelectedFile.current;
@@ -211,22 +201,21 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: prev.name }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
     if (selectedFile && (!prev || selectedFile.name !== prev.name)) {
       fetch(`${BACKEND_URL}/api/session/${sessionId}/open-file`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: selectedFile.name }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
     prevSelectedFile.current = selectedFile;
   }, [selectedFile, sessionId]);
-
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
-
   const addFiles = useCallback((files: FileList) => {
     Array.from(files).forEach((file) => {
       if (!ALLOWED_TYPES.includes(file.type)) return;
@@ -328,11 +317,9 @@ export default function App() {
             }
             return;
           }
-
           const chars = receiveBuffer.current.slice(0, CHARS_PER_TICK);
           receiveBuffer.current = receiveBuffer.current.slice(CHARS_PER_TICK);
           displayBuffer.current += chars;
-
           cancelAnimationFrame(rafHandle);
           rafHandle = requestAnimationFrame(rafFlush);
         }, TICK_MS);
@@ -352,10 +339,7 @@ export default function App() {
 
           const pump = (): Promise<void> =>
             reader.read().then(({ done, value }) => {
-              if (done) {
-                networkDone.current = true;
-                return;
-              }
+              if (done) { networkDone.current = true; return; }
 
               const raw = decoder.decode(value, { stream: true });
               for (const line of raw.split('\n')) {
@@ -374,7 +358,6 @@ export default function App() {
                   receiveBuffer.current += token;
                 }
               }
-
               return pump();
             });
 
@@ -424,7 +407,6 @@ export default function App() {
       />
       <ResizeHandle onMouseDown={onSidebarResize} />
 
-      {/* FIX: Chat panel takes remaining space with flex:1 and a safe min-width */}
       <ChatPanel
         messages={messages}
         isTyping={isTyping}
@@ -442,7 +424,6 @@ export default function App() {
       {previewOpen && (
         <>
           <ResizeHandle onMouseDown={onPreviewResize} />
-          {/* FIX: Pass width correctly and use flex-shrink-0 so it holds its size */}
           <DocumentPreview
             width={previewWidth}
             selectedFile={selectedFile}
@@ -467,6 +448,9 @@ interface SidebarProps {
 }
 
 function Sidebar({ width, collapsed, darkMode, onToggleDark, onNewAnalysis }: SidebarProps) {
+  // useNavigate is safe here because App is rendered inside <BrowserRouter>
+  const navigate = useNavigate();
+
   return (
     <aside
       className="flex flex-col flex-shrink-0 h-full border-r border-outline bg-surface-container-low overflow-hidden"
@@ -489,20 +473,22 @@ function Sidebar({ width, collapsed, darkMode, onToggleDark, onNewAnalysis }: Si
 
       {/* Nav */}
       <nav className="flex-1 py-3 space-y-0.5 overflow-hidden">
-        {NAV_ITEMS.map(({ icon: Icon, label, active }) => (
-          <a
-            key={label}
-            href="#"
+        {NAV_ITEMS.map(({ icon: Icon, label, to }) => (
+          <Link
+            key={to}
+            to={to}
             title={collapsed ? label : undefined}
             className={`flex items-center gap-3 py-2 rounded-lg transition-colors font-medium overflow-hidden whitespace-nowrap ${collapsed ? 'justify-center mx-1 px-0' : 'mx-2 px-3'
-              } ${active
+              } ${
+              /* highlight Chat Assistant as active on /chat */
+              to === '/chat'
                 ? 'text-primary bg-surface-container-high'
                 : 'text-on-surface-variant hover:bg-surface-container-high'
               }`}
           >
             <Icon size={20} className="flex-shrink-0" />
             {!collapsed && <span className="text-sm font-medium truncate">{label}</span>}
-          </a>
+          </Link>
         ))}
       </nav>
 
@@ -637,12 +623,10 @@ function ChatPanel({
     mime === 'application/pdf' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800';
 
   const canSend = !isProcessing && (!!draft.trim() || stagedFiles.length > 0);
-
   const statusDot = isTyping ? 'bg-amber-400' : 'bg-green-500';
   const statusLabel = isTyping ? 'Typing…' : 'Online';
 
   return (
-    // FIX: flex:1 with min-w-0 ensures it fills remaining space without overflowing
     <section className="flex flex-col h-full bg-surface overflow-hidden flex-1 min-w-0">
 
       {/* ── Header ── */}
@@ -665,11 +649,10 @@ function ChatPanel({
               <button
                 key={opt}
                 onClick={() => onModelChange(opt)}
-                className={`px-2 py-1 text-[11px] font-medium leading-none transition-colors ${
-                  model === opt
-                    ? 'bg-primary text-on-primary'
-                    : 'text-on-surface-variant hover:bg-surface-container'
-                }`}
+                className={`px-2 py-1 text-[11px] font-medium leading-none transition-colors ${model === opt
+                  ? 'bg-primary text-on-primary'
+                  : 'text-on-surface-variant hover:bg-surface-container'
+                  }`}
               >
                 {opt === 'auto' ? 'Auto' : opt === 'gemini' ? 'Gemini' : 'Local'}
               </button>
@@ -754,7 +737,7 @@ function ChatPanel({
                           className={`inline-flex items-center gap-1.5 border rounded-lg px-2 py-1 transition-colors ${selectedFile?.id === f.id
                             ? 'border-primary/50 bg-primary/10'
                             : 'border-outline bg-surface hover:bg-surface-container-high'
-                          }`}
+                            }`}
                         >
                           <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}>
                             {chipLabel(f.type)}
@@ -781,12 +764,6 @@ function ChatPanel({
       </div>
 
       {/* ── Input area ── */}
-      {/*
-        FIX: Replaced rigid `w-1/2 mx-auto` with a responsive container:
-        - `w-full` so it always fills the panel
-        - `max-w-2xl mx-auto` caps width at a comfortable reading measure on wide screens
-        - px-4 gives breathing room on narrow panels
-      */}
       <div className="panel-footer px-4 bg-surface flex-shrink-0 border-t border-outline">
         <div className="w-full max-w-2xl mx-auto">
           <div
@@ -903,9 +880,6 @@ function ChatPanel({
 
 /* ─────────────────────────────────────────────
    DocumentPreview
-   FIX: Single clean interface, width applied via inline style,
-        PDF embed fills height with absolute positioning,
-        image is scrollable and properly contained.
 ───────────────────────────────────────────── */
 interface DocumentPreviewProps {
   selectedFile: UploadedFile | null;
@@ -918,8 +892,6 @@ function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: D
   const isPdf = selectedFile?.type === 'application/pdf';
 
   return (
-    // FIX: flex-shrink-0 + explicit width via style ensures the panel holds its size
-    // and doesn't get squashed by the chat panel's flex:1
     <section
       className="flex flex-col h-full bg-surface border-l border-outline overflow-hidden flex-shrink-0"
       style={{ width }}
@@ -955,7 +927,6 @@ function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: D
 
       {/* Content */}
       {selectedFile ? (
-        // FIX: relative container so the PDF embed can be absolutely positioned
         <div className="flex-1 relative overflow-hidden bg-surface-container-low">
           {isPdf ? (
             <embed
@@ -975,14 +946,6 @@ function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: D
               />
             </div>
           )}
-          {/*
-            Drag-intercept overlay: sits above the PDF/image only while the user is
-            actively dragging a ResizeHandle. The native PDF viewer (embed) swallows
-            mousemove/mouseup events that land inside it, so without this layer the
-            resize keeps running after the user releases the mouse over the PDF.
-            pointer-events: auto captures those events and lets the window listeners
-            in useResize handle them normally.
-          */}
           {isResizing && (
             <div className="absolute inset-0 z-50 cursor-col-resize" />
           )}

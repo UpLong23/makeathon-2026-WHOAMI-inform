@@ -7,13 +7,13 @@ import asyncio
 import json
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import AsyncGenerator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -86,11 +86,68 @@ print(f"  File directory: {KAGGLE_FILE_DIR}", flush=True)
 print("RAG pipeline ready.\n", flush=True)
 
 # ─────────────────────────────────────────────
+# Token cost table (USD per 1K tokens, approx.)
+# ─────────────────────────────────────────────
+_COST_PER_1K: dict[str, dict[str, float]] = {
+    "gemini": {"input": 0.000125, "output": 0.000375},
+    "local":  {"input": 0.0,      "output": 0.0},
+    "auto":   {"input": 0.000125, "output": 0.000375},  # treat as gemini
+}
+
+def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    rates = _COST_PER_1K.get(model, _COST_PER_1K["auto"])
+    return (input_tokens / 1000) * rates["input"] + (output_tokens / 1000) * rates["output"]
+
+def _count_tokens(text: str) -> int:
+    """Rough token count: ~4 chars per token (GPT-style heuristic)."""
+    return max(1, len(text) // 4)
+
+# ─────────────────────────────────────────────
+# Usage store  (in-memory; replace with DB for prod)
+# ─────────────────────────────────────────────
+class UsageRecord:
+    def __init__(
+        self,
+        session_id: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+    ):
+        self.session_id   = session_id
+        self.timestamp    = datetime.now(timezone.utc).isoformat()
+        self.model        = model
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.total_tokens = input_tokens + output_tokens
+        self.cost_usd     = _estimate_cost(model, input_tokens, output_tokens)
+
+    def to_dict(self) -> dict:
+        return {
+            "session_id":    self.session_id,
+            "timestamp":     self.timestamp,
+            "model":         self.model,
+            "input_tokens":  self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens":  self.total_tokens,
+            "cost_usd":      round(self.cost_usd, 6),
+        }
+
+# Global log — every completed chat turn appends one record
+_usage_log: list[UsageRecord] = []
+
+
+def _log_usage(session_id: str, model: str, user_msg: str, assistant_msg: str) -> None:
+    input_tokens  = _count_tokens(user_msg)
+    output_tokens = _count_tokens(assistant_msg)
+    _usage_log.append(UsageRecord(session_id, model, input_tokens, output_tokens))
+
+
+# ─────────────────────────────────────────────
 # Session store
 # ─────────────────────────────────────────────
 class Session:
     def __init__(self):
-        self.created: str = datetime.utcnow().isoformat()
+        self.created: str = datetime.now(timezone.utc).isoformat()
         self.history: list[dict] = []
         self.last_query: str = ""
         self.last_answer: str = ""
@@ -104,15 +161,6 @@ def _get_session(session_id: str) -> Session:
     if session_id not in _sessions:
         _sessions[session_id] = Session()
     return _sessions[session_id]
-
-
-# def _build_history_context(session: Session) -> str:
-#     parts = ["--- Previous conversation ---"]
-#     for msg in session.history[-6:]:
-#         label = "Q" if msg["role"] == "user" else "A"
-#         parts.append(f"{label}: {msg['content'][:500]}")
-#     parts.append("--- End of previous conversation ---")
-#     return "\n".join(parts)
 
 
 def _needs_retrieval(query: str, classifier) -> bool:
@@ -159,10 +207,34 @@ class OpenFileRequest(BaseModel):
     filename: str = Field(..., min_length=1)
 
 
+class UsageRecordOut(BaseModel):
+    session_id: str
+    timestamp: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cost_usd: float
+
+
+class UsageSummaryOut(BaseModel):
+    period: str
+    period_start: str | None
+    period_end: str | None
+    session_count: int
+    total_input: int
+    total_output: int
+    total_tokens: int
+    total_cost_usd: float
+    records: list[UsageRecordOut]
+
+
 # ─────────────────────────────────────────────
 # Streaming generator
 # ─────────────────────────────────────────────
-async def _stream_rag_response(message: str, session_id: str, model: str = "auto") -> AsyncGenerator[str, None]:
+async def _stream_rag_response(
+    message: str, session_id: str, model: str = "auto"
+) -> AsyncGenerator[str, None]:
     session = _get_session(session_id)
 
     use_gemini_for_request = use_gemini
@@ -173,7 +245,9 @@ async def _stream_rag_response(message: str, session_id: str, model: str = "auto
     elif model == "local":
         use_gemini_for_request = False
 
-    # ── Memory path: file chip is open, answer from OCR text ──
+    answer_accumulator: list[str] = []
+
+    # ── Memory path: file chip is open ──
     if session.open_files:
         from rag_pipeline.gemini_client import ANSWER_PROMPT
         docs_text = "\n---\n".join(session.open_files.values())
@@ -188,55 +262,53 @@ async def _stream_rag_response(message: str, session_id: str, model: str = "auto
             except Exception as e:
                 print(f"\n[Gemini error: {e}]")
         if answer is None and llm_pipe_for_request:
-            messages = [{"role": "user", "content": prompt}]
-            out = llm_pipe_for_request(messages, max_new_tokens=512, temperature=0.8)
+            messages_in = [{"role": "user", "content": prompt}]
+            out = llm_pipe_for_request(messages_in, max_new_tokens=512, temperature=0.8)
             answer = out[0]["generated_text"][-1]["content"]
-            print(answer)
         if answer is None:
             answer = "No answer could be generated from the open document."
+
         words = answer.split(" ")
-        batch = []
+        batch: list[str] = []
         for word in words:
             batch.append(word)
+            answer_accumulator.append(word + " ")
             if len(batch) >= 5:
                 yield f"data: {' '.join(batch)}\n\n"
                 batch = []
                 await asyncio.sleep(0)
         if batch:
             yield f"data: {' '.join(batch)}\n\n"
+
+        full_answer = "".join(answer_accumulator).strip()
+        _log_usage(session_id, model, message, full_answer)
+
         session.history.append({"role": "user", "content": message})
-        session.history.append({"role": "assistant", "content": answer})
-        session.last_query = message
-        session.last_answer = answer
+        session.history.append({"role": "assistant", "content": full_answer})
+        session.last_query  = message
+        session.last_answer = full_answer
         return
 
     # ── Normal pipeline path ──
-    # history_context = _build_history_context(session)
-    # conversation_context = history_context if history_context else None
-
-    retrieval_needed = _needs_retrieval(message, classifier)
-
     try:
         result = run_pipeline(
             message,
             llm_pipe=llm_pipe_for_request,
             use_gemini=use_gemini_for_request,
-            # conversation_context=conversation_context,
-            # needs_retrieval=retrieval_needed,
         )
 
         answer = result.get("answer", "No answer generated.")
-        steps = result.get("steps", {})
+        steps  = result.get("steps", {})
 
         docs_retrieved = result.get("docs_retrieved", set())
         files_list = []
         if docs_retrieved:
             files_list = [
                 {
-                    "id": idx + 1,
+                    "id":   idx + 1,
                     "name": fname,
                     "type": "image/jpeg",
-                    "url": f"/api/files/{fname}",
+                    "url":  f"/api/files/{fname}",
                 }
                 for idx, fname in enumerate(sorted(docs_retrieved))
             ]
@@ -245,34 +317,41 @@ async def _stream_rag_response(message: str, session_id: str, model: str = "auto
         if not steps.get("passed", True):
             escaped = answer.replace("\n", "\\n")
             yield f"data: {escaped}\n\n"
-            session.history.append({"role": "user", "content": message})
-            session.history.append({"role": "assistant", "content": answer})
+            _log_usage(session_id, model, message, answer)
+            session.history.append({"role": "user",      "content": message})
+            session.history.append({"role": "assistant",  "content": answer})
             return
 
         words = answer.split(" ")
         batch = []
         for word in words:
             batch.append(word)
+            answer_accumulator.append(word + " ")
             if len(batch) >= 5:
-                chunk = " ".join(batch)
+                chunk   = " ".join(batch)
                 escaped = chunk.replace("\n", "\\n")
                 yield f"data: {escaped}\n\n"
                 batch = []
                 await asyncio.sleep(0)
 
         if batch:
-            chunk = " ".join(batch)
+            chunk   = " ".join(batch)
             escaped = chunk.replace("\n", "\\n")
             yield f"data: {escaped}\n\n"
 
-        session.last_query = message
-        session.last_answer = answer
-        session.last_files = files_list if docs_retrieved else []
-        session.history.append({"role": "user", "content": message})
-        session.history.append({"role": "assistant", "content": answer})
+        full_answer = "".join(answer_accumulator).strip()
+        _log_usage(session_id, model, message, full_answer)
+
+        session.last_query  = message
+        session.last_answer = full_answer
+        session.last_files  = files_list if docs_retrieved else []
+        session.history.append({"role": "user",      "content": message})
+        session.history.append({"role": "assistant",  "content": full_answer})
 
     except Exception as exc:
-        yield f"data: \u26a0\ufe0f Pipeline error: {exc}\n\n"
+        err_text = f"⚠️ Pipeline error: {exc}"
+        yield f"data: {err_text}\n\n"
+        _log_usage(session_id, model, message, err_text)
 
 
 # ─────────────────────────────────────────────
@@ -351,8 +430,64 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={
             "X-Accel-Buffering": "no",
-            "Cache-Control": "no-cache",
+            "Cache-Control":     "no-cache",
         },
+    )
+
+
+# ─────────────────────────────────────────────
+# Usage endpoint
+# ─────────────────────────────────────────────
+@app.get("/api/usage", response_model=UsageSummaryOut)
+async def get_usage(
+    period: str = Query(default="7d", pattern=r"^(24h|7d|30d|all)$"),
+) -> UsageSummaryOut:
+    """
+    Return aggregated token usage for the requested period.
+
+    period: 24h | 7d | 30d | all
+    """
+    now = datetime.now(timezone.utc)
+
+    cutoff: datetime | None
+    if period == "24h":
+        cutoff = now - timedelta(hours=24)
+    elif period == "7d":
+        cutoff = now - timedelta(days=7)
+    elif period == "30d":
+        cutoff = now - timedelta(days=30)
+    else:
+        cutoff = None  # all time
+
+    filtered: list[UsageRecord] = []
+    for rec in _usage_log:
+        ts = datetime.fromisoformat(rec.timestamp)
+        if cutoff is None or ts >= cutoff:
+            filtered.append(rec)
+
+    # Unique sessions inside the window
+    session_ids = {r.session_id for r in filtered}
+
+    total_input  = sum(r.input_tokens  for r in filtered)
+    total_output = sum(r.output_tokens for r in filtered)
+    total_tokens = sum(r.total_tokens  for r in filtered)
+    total_cost   = sum(r.cost_usd      for r in filtered)
+
+    records_out = [
+        UsageRecordOut(**r.to_dict())
+        for r in sorted(filtered, key=lambda x: x.timestamp, reverse=True)
+    ]
+
+    return UsageSummaryOut(
+        period=period,
+        period_start=cutoff.isoformat() if cutoff else None,
+        period_end=now.isoformat(),
+        session_count=len(session_ids),
+        total_input=total_input,
+        total_output=total_output,
+        total_tokens=total_tokens,
+        total_cost_usd=round(total_cost, 6),
+        records=records_out,
     )
 
 
