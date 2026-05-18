@@ -1,2 +1,7 @@
 .data
 .venv
+misc/
+resources/ 
+.env
+data.ipynb
+rag.ipynb
