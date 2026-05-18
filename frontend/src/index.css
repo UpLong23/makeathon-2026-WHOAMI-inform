@@ -1,0 +1,332 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@layer components {
+  .markdown-body {
+    font-size: 0.875rem;
+    line-height: 1.625;
+  }
+  .markdown-body > * + * {
+    margin-top: 0.5rem;
+  }
+  .markdown-body p {
+    margin: 0;
+  }
+  .markdown-body strong {
+    font-weight: 600;
+  }
+  .markdown-body ul,
+  .markdown-body ol {
+    padding-left: 1.25rem;
+    margin: 0.25rem 0;
+  }
+  .markdown-body li {
+    margin: 0.125rem 0;
+  }
+  .markdown-body code {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8em;
+    background: var(--color-surface-container-high);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+  }
+  .markdown-body pre {
+    background: var(--color-surface-container-high);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    margin: 0.5rem 0;
+  }
+  .markdown-body pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+  }
+  .markdown-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0;
+    font-size: 0.8125rem;
+  }
+  .markdown-body th,
+  .markdown-body td {
+    border: 1px solid var(--color-outline);
+    padding: 0.375rem 0.5rem;
+    text-align: left;
+  }
+  .markdown-body th {
+    background: var(--color-surface-container);
+    font-weight: 600;
+  }
+  .markdown-body a {
+    color: var(--color-primary);
+    text-decoration: underline;
+  }
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0.75rem 0 0.25rem;
+  }
+  .markdown-body h1 { font-size: 1.125rem; }
+  .markdown-body h2 { font-size: 1rem; }
+  .markdown-body h3 { font-size: 0.9375rem; }
+  .markdown-body blockquote {
+    border-left: 3px solid var(--color-outline);
+    padding-left: 0.75rem;
+    color: var(--color-on-surface-variant);
+    margin: 0.5rem 0;
+  }
+  .markdown-body hr {
+    border: none;
+    border-top: 1px solid var(--color-outline);
+    margin: 0.75rem 0;
+  }
+}
+
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-dim: #fafafa;
+  --color-surface-bright: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #fafafa;
+  --color-surface-container: #f5f5f5;
+  --color-surface-container-high: #e5e5e5;
+  --color-surface-container-highest: #d4d4d4;
+  --color-on-surface: #171717;
+  --color-on-surface-variant: #737373;
+  --color-inverse-surface: #262626;
+  --color-inverse-on-surface: #ffffff;
+  --color-outline: #e5e5e5;
+  --color-outline-variant: #f5f5f5;
+  --color-surface-tint: #171717;
+  --color-primary: #171717;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #f5f5f5;
+  --color-on-primary-container: #171717;
+  --color-inverse-primary: #a3a3a3;
+  --color-secondary: #000000;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #f4f4f5;
+  --color-on-secondary-container: #18181b;
+  --color-tertiary: #171717;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #e5e5e5;
+  --color-on-tertiary-container: #171717;
+  --color-error: #ef4444;
+  --color-on-error: #ffffff;
+  --color-error-container: #fee2e2;
+  --color-on-error-container: #991b1b;
+  --color-primary-fixed: #e5e5e5;
+  --color-primary-fixed-dim: #d4d4d4;
+  --color-on-primary-fixed: #171717;
+  --color-on-primary-fixed-variant: #404040;
+  --color-secondary-fixed: #f4f4f5;
+  --color-secondary-fixed-dim: #e4e4e7;
+  --color-on-secondary-fixed: #18181b;
+  --color-on-secondary-fixed-variant: #27272a;
+  --color-tertiary-fixed: #e5e5e5;
+  --color-tertiary-fixed-dim: #d4d4d4;
+  --color-on-tertiary-fixed: #171717;
+  --color-on-tertiary-fixed-variant: #404040;
+  --color-background: #fafafa;
+  --color-on-background: #171717;
+  --color-surface-variant: #e5e5e5;
+
+  --font-title-sm: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display-lg: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-data-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-body-sm: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-body-md: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-headline-md: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-label-caps: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --text-title-sm: 18px;
+  --text-title-sm--line-height: 24px;
+  --text-title-sm--font-weight: 500;
+
+  --text-display-lg: 32px;
+  --text-display-lg--line-height: 40px;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 500;
+
+  --text-data-mono: 13px;
+  --text-data-mono--line-height: 18px;
+  --text-data-mono--font-weight: 400;
+
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 20px;
+  --text-body-sm--font-weight: 400;
+
+  --text-body-md: 14px;
+  --text-body-md--line-height: 22px;
+  --text-body-md--font-weight: 400;
+
+  --text-headline-md: 20px;
+  --text-headline-md--line-height: 28px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 500;
+
+  --text-label-caps: 11px;
+  --text-label-caps--line-height: 16px;
+  --text-label-caps--letter-spacing: 0.05em;
+  --text-label-caps--font-weight: 600;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  --spacing-base: 4px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 40px;
+  --spacing-container-max: 1440px;
+  --spacing-gutter: 16px;
+}
+
+/* ─────────────────────────────────────────────
+   Dark mode overrides
+───────────────────────────────────────────── */
+.dark {
+  --color-background: #0a0a0a;
+  --color-on-background: #e5e5e5;
+
+  --color-surface: #141414;
+  --color-surface-dim: #0f0f0f;
+  --color-surface-bright: #1f1f1f;
+
+  --color-surface-container-lowest: #141414;
+  --color-surface-container-low: #1a1a1a;
+  --color-surface-container: #242424;
+  --color-surface-container-high: #2e2e2e;
+  --color-surface-container-highest: #383838;
+
+  --color-on-surface: #e5e5e5;
+  --color-on-surface-variant: #a3a3a3;
+
+  --color-inverse-surface: #e5e5e5;
+  --color-inverse-on-surface: #171717;
+
+  --color-outline: #2e2e2e;
+  --color-outline-variant: #242424;
+
+  --color-primary: #e5e5e5;
+  --color-on-primary: #171717;
+  --color-primary-container: #2e2e2e;
+  --color-on-primary-container: #e5e5e5;
+  --color-inverse-primary: #525252;
+
+  --color-secondary: #ffffff;
+  --color-on-secondary: #000000;
+  --color-secondary-container: #27272a;
+  --color-on-secondary-container: #f4f4f5;
+  --color-secondary-fixed: #27272a;
+  --color-secondary-fixed-dim: #3f3f46;
+  --color-on-secondary-fixed: #f4f4f5;
+  --color-on-secondary-fixed-variant: #e4e4e7;
+
+  --color-tertiary: #e5e5e5;
+  --color-on-tertiary: #171717;
+  --color-tertiary-container: #2e2e2e;
+  --color-on-tertiary-container: #e5e5e5;
+
+  --color-surface-tint: #e5e5e5;
+  --color-surface-variant: #2e2e2e;
+
+  --color-primary-fixed: #2e2e2e;
+  --color-primary-fixed-dim: #404040;
+  --color-on-primary-fixed: #e5e5e5;
+  --color-on-primary-fixed-variant: #a3a3a3;
+
+  --color-tertiary-fixed: #2e2e2e;
+  --color-tertiary-fixed-dim: #404040;
+  --color-on-tertiary-fixed: #e5e5e5;
+  --color-on-tertiary-fixed-variant: #a3a3a3;
+
+  --color-error-container: #450a0a;
+  --color-on-error-container: #fca5a5;
+}
+
+.dark .offline-banner {
+  background: #2d1515;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+@layer utilities {
+  .intelligence-glow {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.2);
+    border-radius: 9999px;
+  }
+}
+
+@layer components {
+  .resize-handle {
+    touch-action: none;
+  }
+
+  /* Syncs the top header strip across sidebar and chat panel —
+     same idea as panel-footer below. */
+  .panel-header {
+    min-height: 56px;
+  }
+
+  /* Syncs the bottom footer strip across sidebar and chat input bar.
+     Height derivation (sidebar footer):
+       py-4           = 16px top + 16px bottom  = 32px
+       button 1       = py-2 (16px) + text-sm lh (20px) = 36px
+       space-y-2 gap  = 8px
+       button 2       = py-2 (16px) + text-sm lh (20px) = 36px
+       ─────────────────────────────────────────────────────
+       total          = 32 + 36 + 8 + 36          = 112px
+
+     Both the sidebar <div> footer and the chat input wrapper
+     carry this class so they are always the same height. */
+  .panel-footer {
+    min-height: 112px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .preview-toolbar {
+    min-height: 52px;
+  }
+
+  /* PDF: absolute inset-0 in TSX handles sizing; just kill border */
+  .preview-pdf {
+    border: none;
+    display: block;
+  }
+
+  /* Image: full width, natural height, no border-radius */
+  .preview-image {
+    display: block;
+    border-radius: 0;
+  }
+
+  .chat-textarea {
+    min-height: 28px;
+    max-height: 120px;
+    color: var(--color-on-surface);
+  }
+}
