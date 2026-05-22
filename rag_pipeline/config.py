@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -28,6 +29,7 @@ CLASSIFIER_MODEL = "facebook/bart-large-mnli"
 BATCH_SIZE = 64
 TOP_K = 5
 
+load_dotenv(BASE_DIR / "backend" / ".env")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = "gemini-3-flash-preview"
 
