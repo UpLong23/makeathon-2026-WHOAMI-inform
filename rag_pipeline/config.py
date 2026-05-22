@@ -3,8 +3,22 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-KAGGLE_PATH = Path.home() / ".cache" / "kagglehub" / "datasets" / "osamahosamabdellatif" / "high-quality-invoice-images-for-ocr" / "versions" / "3"
-CSV_PATH = KAGGLE_PATH / "batch_1" / "batch_1" / "batch1_1.csv"
+KAGGLE_PATH = Path.home() / ".cache" / "kagglehub" / "datasets" / \
+    "osamahosamabdellatif" / "high-quality-invoice-images-for-ocr" / "versions" / "3"
+
+# Support multiple CSV batches — add or remove as needed
+CSV_PATHS = [
+    KAGGLE_PATH / "batch_1" / "batch_1" / "batch1_1.csv",
+    KAGGLE_PATH / "batch_1" / "batch_1" / "batch1_2.csv",
+    # KAGGLE_PATH / "batch_1" / "batch_1" / "batch1_3.csv",
+    # KAGGLE_PATH / "batch_2" / "batch_2" / "batch2_1.csv",  # Uncomment when available
+    # KAGGLE_PATH / "batch_2" / "batch_2" / "batch2_2.csv",  # Uncomment when available
+    # KAGGLE_PATH / "batch_2" / "batch_2" / "batch2_3.csv",  # Uncomment when available
+]
+
+# Legacy single-CSV support (uses first available)
+CSV_PATH = next((p for p in CSV_PATHS if p.exists()), CSV_PATHS[0])
+
 CHROMA_PATH = BASE_DIR / "invoices_chroma_db"
 COLLECTION_NAME = "invoices"
 
@@ -29,5 +43,5 @@ STOPWORDS = {
     "give", "search", "look", "fetch",
 }
 
-if __name__=='__main__':
+if __name__ == '__main__':
     print(BASE_DIR)
