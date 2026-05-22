@@ -8,3 +8,4 @@ rag.ipynb
 .secrets/
 backend/.env
 backend/.env.local
+ocr/.data
