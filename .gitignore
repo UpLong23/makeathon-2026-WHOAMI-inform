@@ -9,3 +9,4 @@ rag.ipynb
 backend/.env
 backend/.env.local
 ocr/.data
+ocr/structure_for_llm.ipynb
