@@ -11,3 +11,6 @@ backend/.env.local
 ocr/.data
 ocr/structure_for_llm.ipynb
 invoices_chroma_db/
+frontend/node_modules/
+**/__pycache__/
+*.pyc
