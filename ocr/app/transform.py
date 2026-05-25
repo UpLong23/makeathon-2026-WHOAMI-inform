@@ -152,7 +152,7 @@ Recheck your extraction:
 - Do the numbers add up correctly (Net + VAT ≈ Gross)?
 
 OCR TEXT:
-{raw_text}
+{structured_text}
 """
 
 
