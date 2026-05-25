@@ -4,8 +4,8 @@ import sys
 
 from groq import Groq
 
-from app.config import GROQ_API_KEY, logger
-from app.pipeline import process_image
+from config import GROQ_API_KEY, logger
+from pipeline import process_image
 
 
 def main() -> None:

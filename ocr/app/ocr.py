@@ -4,7 +4,7 @@ import pytesseract
 from pytesseract import Output
 import pandas as pd
 
-from app.config import TESSERACT_CMD, logger
+from config import TESSERACT_CMD, logger
 
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 

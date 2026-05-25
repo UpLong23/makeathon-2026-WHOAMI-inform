@@ -1,9 +1,9 @@
 from groq import Groq
 
-from app.config import DEFAULT_CURRENCY, REQUIRED_FIELDS, logger
-from app.ocr import run_ocr
-from app.transform import structure_for_llm, extract_fields
-from app.schemas import InvoiceDocument
+from config import DEFAULT_CURRENCY, REQUIRED_FIELDS, logger
+from ocr import run_ocr
+from transform import structure_for_llm, extract_fields
+from schemas import InvoiceDocument
 
 
 def _normalize_to_document(
@@ -51,6 +51,7 @@ def process_image(
     structured_text = structure_for_llm(raw_text)
     fields = extract_fields(structured_text, client)
 
-    doc = _normalize_to_document(fields, raw_text, idx=doc_index, currency=currency)
+    doc = _normalize_to_document(
+        fields, raw_text, idx=doc_index, currency=currency)
     logger.info("Extracted document: %s", doc.doc_id)
     return doc
