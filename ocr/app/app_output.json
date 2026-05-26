@@ -1,18 +1,18 @@
 {
   "doc_id": "inv_001",
   "doc_type": "invoice",
-  "vendor": null,
-  "vendor_normalized": null,
-  "invoice_number": null,
-  "invoice_date": "03/21/2015",
+  "vendor": "Thornton, Franklin and Hamilton",
+  "vendor_normalized": "thornton, franklin and hamilton",
+  "invoice_number": "11637316",
+  "invoice_date": "2015-03-21",
   "currency": "EUR",
   "subtotal": 3763.69,
   "tax": 376.37,
   "total": 4140.06,
   "status": "captured",
   "line_items": [],
-  "raw_text": "Invoice no: 11637316\nDate of issue:\t03/21/2015\nSeller:\tClient:\nThornton, Franklin and Hamilton Farmer, Pennington and Osborn\n5028 Judy Heights Suite 079 614 Rodney Manor\nJustinburgh, DE 26071\tSouth Kristinberg, DE 43488\nTax Id: 998-77-7262\tTax Id: 997-74-8995\nIBAN: GB75IVMI30490349190719\nITEMS\nNo. Description Qty UM Net price Net worth VAT [%] Gross\nworth\n1. Custom Build Dell Desktop 1,00 eacn 99,00 99,00 10% 108,90\nComputer i5 | 16GB | 1TB SSD |\nHDMI Windows 10 PC WiFi\n2. HP 8300 Slim Desktop Small 1,00 each 99,99 99,99 10% 109,99\nComputer PC i5 3.2GHz 4GB\n500GB Windows 10 Pro WiFi\n3. GAMING PC Desktop Computer 5,00 eacn 569,99 2 849,95 10% 3 134,95\nRGB BUNDLE Intel CORE i7\n16GB RAM Nvidia GTX 1650 1TB\n4. HP Compaq 6200 Pro SFF 5,00 eacn 113,96 569,80 10% 626,78\nDesktop Computer Pentium\nWindows 10 System 500GB 1TB\n5. Dell Desktop PC Computer Core 1,00 eacn 144,95 144,95 10% 159,44\n2 Duo CPU 500GB 4GB Dual 19\"\nLCD Wifi Windows 10\nSUMMARY\nVAT [%] Net worth VAT Gross worth\n10% 3 763,69 376,37 4 140,06\nTotal $ 3 763,69 $ 376,37 $4 140,06",
-  "client_name": null,
-  "client_tax_id": null,
-  "seller_tax_id": null
+  "raw_text": "Invoice no: 11637316\nDate of issue:\t03/21/2015\nSeller:\tClient:\nThornton, Franklin and Hamilton\tFarmer, Pennington and Osborn\n5028 Judy Heights Suite 079\t614 Rodney Manor\nJustinburgh, DE 26071\tSouth Kristinberg, DE 43488\nTax Id: 998-77-7262\tTax Id: 997-74-8995\nIBAN: GB75IVMI30490349190719\nITEMS\nNo. Description\tQty UM Net price Net worth VAT [%] Gross\nworth\n1. Custom Build Dell Desktop 1,00 eacn 99,00 99,00 10% 108,90\nComputer i5 | 16GB | 1TB SSD |\nHDMI Windows 10 PC WiFi\n2. HP 8300 Slim Desktop Small 1,00 each 99,99 99,99 10% 109,99\nComputer PC i5 3.2GHz 4GB\n500GB Windows 10 Pro WiFi\n3. GAMING PC Desktop Computer 5,00 eacn 569,99 2 849,95 10% 3 134,95\nRGB BUNDLE Intel CORE i7\n16GB RAM Nvidia GTX 1650 1TB\n4. HP Compaq 6200 Pro SFF 5,00 eacn 113,96 569,80 10% 626,78\nDesktop Computer Pentium\nWindows 10 System 500GB 1TB\n5. Dell Desktop PC Computer Core 1,00 eacn 144,95 144,95 10% 159,44\n2 Duo CPU 500GB 4GB Dual 19\"\nLCD Wifi Windows 10\nSUMMARY\nVAT [%]\tNet worth VAT Gross worth\n10%\t3 763,69 376,37 4 140,06\nTotal\t$ 3 763,69 $ 376,37 $4 140,06",
+  "client_name": "Farmer, Pennington and Osborn",
+  "client_tax_id": "997-74-8995",
+  "seller_tax_id": "998-77-7262"
 }

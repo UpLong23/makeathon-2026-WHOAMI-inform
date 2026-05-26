@@ -27,5 +27,5 @@ LLM_TIMEOUT: int = int(os.environ.get("LLM_TIMEOUT", "30"))
 
 REQUIRED_FIELDS: list[str] = [
     "Seller Name", "Seller Tax ID", "Client Name", "Client Tax ID",
-    "Invoice Number", "Invoice Date", "Net Worth", "VAT", "Gross Worth",
+    "Invoice Number", "Invoice Date", "Net Worth", "VAT", "Gross Worth", "line_items"
 ]

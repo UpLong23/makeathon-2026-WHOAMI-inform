@@ -103,6 +103,10 @@ FIELDS TO EXTRACT:
 - Net Worth: First numeric value from FINAL Total line (amount before tax)
 - VAT: Second numeric value from FINAL Total line (tax amount in currency, never a percentage)
 - Gross Worth: Third numeric value from FINAL Total line (final total)
+- Line Items: List of individual products/services from the ITEMS section of the invoice. For each row extract:
+    • description: full multi-line item name/description as it appears
+    • quantity: numeric quantity (as string, e.g. "1.00", "5.00")
+    • total_price: the Net Worth column value for that line item (before tax, as string)
 
 NUMBER CLEANING RULES (CRITICAL — apply to all amounts):
 Step 1: Remove ALL spaces (both leading and internal): " 84 944,82" → "84944,82"
@@ -116,6 +120,21 @@ CRITICAL EXAMPLES OF NUMBER CLEANING:
 - "$ 481,99" → remove $ and space → "481,99" → replace comma → 481.99 ✓
 - "$5 301,89" → remove $ → "5 301,89" → remove spaces → "5301,89" → replace comma → 5301.89 ✓
 - "€1.234,50" → remove € → "1.234,50" → remove dot (thousands separator) → "1234,50" → replace comma → 1234.50 ✓
+
+LINE ITEMS PARSING RULES:
+- The ITEMS section begins after a header row containing columns like "No.", "Description", "Qty", "Net price", "Net worth", "VAT", "Gross worth".
+- Each item row starts with a number followed by a period (e.g. "1.", "2.", "3.").
+- Description may span multiple lines — collect all lines until the next numbered item starts.
+- Apply the same number cleaning rules above to quantity and total_price values.
+- total_price corresponds to the "Net worth" column (NOT "Gross worth").
+- Stop parsing items when you reach a line starting with "SUMMARY", "Total", or a blank separator.
+
+LINE ITEMS EXAMPLE (from a real invoice):
+  Row: "1. Custom Build Dell Desktop 1,00 each 99,00 99,00 10% 108,90"
+  → description: "Custom Build Dell Desktop Computer i5 | 16GB | 1TB SSD | HDMI Windows 10 PC WiFi"
+       (include continuation lines that belong to this item)
+  → quantity: "1.00"
+  → total_price: "99.00"   ← this is the Net worth column value
 
 VALIDATION & SELF-CORRECTION:
 After extraction, verify: Net Worth + VAT ≈ Gross Worth (within 0.1 tolerance to account for rounding)
@@ -144,12 +163,16 @@ OUTPUT FORMAT:
 Return raw JSON only. No markdown. No explanation. Use exact field names. Use null for missing fields.
 Return numbers as plain floats (not strings).
 Return dates as YYYY-MM-DD strings.
+Return line_items as an array of objects with fields: "description" (string), "quantity" (string), "total_price" (string).
+Return an empty array [] for line_items if no ITEMS section is found.
 
 Recheck your extraction:
 - Did you find exactly 3 numeric amounts from the Total line?
 - Did you remove ALL spaces from each amount?
 - Did you convert commas to dots?
 - Do the numbers add up correctly (Net + VAT ≈ Gross)?
+- Did you extract all numbered line items from the ITEMS section?
+- Does each line item have description, quantity, and total_price (net worth)?
 
 OCR TEXT:
 {structured_text}
