@@ -27,6 +27,7 @@ def _normalize_to_document(
         client_tax_id=fields.get("Client Tax ID"),
         seller_tax_id=fields.get("Seller Tax ID"),
         raw_text=raw_text,
+        line_items=fields.get("Line Items")
     )
 
 
@@ -51,6 +52,8 @@ def process_image(
     structured_text = structure_for_llm(raw_text)
     fields = extract_fields(structured_text, client)
 
+    # print("\n\n\nFIELDS ===")
+    # print(fields, "\n")
     doc = _normalize_to_document(
         fields, raw_text, idx=doc_index, currency=currency)
     logger.info("Extracted document: %s", doc.doc_id)

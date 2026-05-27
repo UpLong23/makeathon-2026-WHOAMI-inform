@@ -241,6 +241,7 @@ def extract_fields(structured_text: str, client: Groq) -> dict:
     try:
         llm_fields = extract_fields_llm(structured_text, client)
         for field in REQUIRED_FIELDS:
+            # if field == "line_item":
             if not llm_fields.get(field) and regex_fields.get(field):
                 logger.info(
                     "'%s' null from LLM → filled by regex: %s",

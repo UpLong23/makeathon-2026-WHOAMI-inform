@@ -1,18 +1,29 @@
 {
   "doc_id": "inv_001",
   "doc_type": "invoice",
-  "vendor": "Thornton, Franklin and Hamilton",
-  "vendor_normalized": "thornton, franklin and hamilton",
-  "invoice_number": "11637316",
-  "invoice_date": "2015-03-21",
+  "vendor": "Wagner, Jensen and Key",
+  "vendor_normalized": "wagner, jensen and key",
+  "invoice_number": "91296589",
+  "invoice_date": "2019-04-09",
   "currency": "EUR",
-  "subtotal": 3763.69,
-  "tax": 376.37,
-  "total": 4140.06,
+  "subtotal": 1517.95,
+  "tax": 151.8,
+  "total": 1669.75,
   "status": "captured",
-  "line_items": [],
-  "raw_text": "Invoice no: 11637316\nDate of issue:\t03/21/2015\nSeller:\tClient:\nThornton, Franklin and Hamilton\tFarmer, Pennington and Osborn\n5028 Judy Heights Suite 079\t614 Rodney Manor\nJustinburgh, DE 26071\tSouth Kristinberg, DE 43488\nTax Id: 998-77-7262\tTax Id: 997-74-8995\nIBAN: GB75IVMI30490349190719\nITEMS\nNo. Description\tQty UM Net price Net worth VAT [%] Gross\nworth\n1. Custom Build Dell Desktop 1,00 eacn 99,00 99,00 10% 108,90\nComputer i5 | 16GB | 1TB SSD |\nHDMI Windows 10 PC WiFi\n2. HP 8300 Slim Desktop Small 1,00 each 99,99 99,99 10% 109,99\nComputer PC i5 3.2GHz 4GB\n500GB Windows 10 Pro WiFi\n3. GAMING PC Desktop Computer 5,00 eacn 569,99 2 849,95 10% 3 134,95\nRGB BUNDLE Intel CORE i7\n16GB RAM Nvidia GTX 1650 1TB\n4. HP Compaq 6200 Pro SFF 5,00 eacn 113,96 569,80 10% 626,78\nDesktop Computer Pentium\nWindows 10 System 500GB 1TB\n5. Dell Desktop PC Computer Core 1,00 eacn 144,95 144,95 10% 159,44\n2 Duo CPU 500GB 4GB Dual 19\"\nLCD Wifi Windows 10\nSUMMARY\nVAT [%]\tNet worth VAT Gross worth\n10%\t3 763,69 376,37 4 140,06\nTotal\t$ 3 763,69 $ 376,37 $4 140,06",
-  "client_name": "Farmer, Pennington and Osborn",
-  "client_tax_id": "997-74-8995",
-  "seller_tax_id": "998-77-7262"
+  "line_items": [
+    {
+      "description": "Moroccan Amazigh Handmade Carpet 14'2\" x 7'5\"",
+      "quantity": "4.00",
+      "total_price": "342.00"
+    },
+    {
+      "description": "Chindi Rugs Carpet New Design Bohemian Garden Yoga Mat Indian Kilim Counterpane",
+      "quantity": "5.00",
+      "total_price": "29.99"
+    }
+  ],
+  "raw_text": "Invoice no: 91296589\nDate of issue:\t09/04/2019\nSeller:\tClient:\nWagner, Jensen and Key\tKing Inc\n2023 Morgan Islands\t78997 Brent Court\nLake Jenniferland, IL 67123\tJonesland, MA 32167\nTax Id: 926-90-7954\tTax Id: 939-83-4671\nIBAN: GB83TLEL31907721124823\nITEMS\nNo. Description\tQty UM Net price Net worth VAT [%] Gross\nworth\n1. Moroccan Amazigh Handmade 4,00 each 342,00 1 368,00 10% 1 504,80\nCarpet 14'2\" x 7'5\"\n2. Chindi Rugs Carpet New Design 5,00 each 29,99 149,95 10% 164,94\nBohemian Garden Yoga Mat\nIndian Kilim Counterpane\nSUMMARY\nVAT [%]\tNet worth VAT Gross worth\n10%\t1517,95 151,80 1 669,75\nTotal\t$1517,95 $ 151,80 $1 669,75",
+  "client_name": "King Inc",
+  "client_tax_id": "939-83-4671",
+  "seller_tax_id": "926-90-7954"
 }
