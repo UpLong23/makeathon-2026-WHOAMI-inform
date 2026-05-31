@@ -16,3 +16,4 @@ frontend/node_modules/
 *.pyc
 test.png
 ocr/app/app_output.json
+"NEXT TASKS.MD"
