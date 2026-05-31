@@ -6,6 +6,13 @@ from transform import structure_for_llm, extract_fields
 from schemas import InvoiceDocument
 
 
+def _raw_text_modify(raw_text: str) -> str:
+    """ Return Raw Text up until before the 
+    items Section of the Recceipts"""
+    raw_text_sliced = raw_text[:raw_text.index("ITEMS")]
+    return raw_text_sliced
+
+
 def _normalize_to_document(
     fields: dict,
     raw_text: str,
@@ -26,7 +33,7 @@ def _normalize_to_document(
         client_name=fields.get("Client Name"),
         client_tax_id=fields.get("Client Tax ID"),
         seller_tax_id=fields.get("Seller Tax ID"),
-        raw_text=raw_text,
+        raw_text=_raw_text_modify(raw_text),
         line_items=fields.get("Line Items")
     )
 
