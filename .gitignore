@@ -16,4 +16,6 @@ frontend/node_modules/
 *.pyc
 test.png
 ocr/app/app_output.json
-"NEXT TASKS.MD"
+NEXT_TASKS.md
+ocr/app/app_output.json
+ocr/app/__pycache__/
