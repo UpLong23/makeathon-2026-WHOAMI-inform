@@ -1,3 +1,9 @@
+# python library that helps compare similarities between two texts
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+
+FUZZY_MATCH_THRESHOLD = 90
+STRICT_NUMERIC_TOLERANCE = 0.1  # use .env later to store these
 
 
 def fuzzy_compare(str1, str2, threshold=FUZZY_MATCH_THRESHOLD):

@@ -1,4 +1,5 @@
-from parse_ocred_text import parse_ocred_text
+from parse_ocred_text import parse_ocred_text, extract_date_components
+from compare import strict_compare, fuzzy_compare
 import pandas as pd
 import json
 import re
@@ -38,8 +39,17 @@ def validate_ocr_results(batch_df, output_json, domains=None, tolerance=STRICT_N
     """
 
     if domains is None:
-        domains = ['Seller Name', 'Client Name', 'Seller Tax ID', 'Client Tax ID',
-                   'Invoice Number', 'Invoice Date', 'Net Worth', 'VAT', 'Gross Worth']
+        domains = [
+            'vendor_normalized',
+            'client_name',
+            'seller_tax_id',
+            'client_tax_id',
+            'invoice_number',
+            'invoice_date',
+            'subtotal',
+            'tax',
+            'total'
+        ]
     elif isinstance(domains, str):
         domains = [domains]
 
@@ -66,23 +76,33 @@ def validate_ocr_results(batch_df, output_json, domains=None, tolerance=STRICT_N
         # Extract invoice number from OCRed Text
         match = re.search(r'Invoice\s+no:\s*(\d+)', row["OCRed Text"])
         if match:
+            # print("\n\n---------FOUND A MATCH\n")
             invoice_number = match.group(1)
+            # print(invoice_number)
             batch_idx[invoice_number] = idx
+            # if invoice_number == "91296589":
+            #     print("FOUND SMTH")
 
-    # Validate output_json file
-    invoice_num = str(output_json['invoice_number'])
+            # Validate output_json file
+    invoice_num = str(output_json['invoice_number'].iloc[0])
+    # print("\n\n-------- TO FIND\n")
+    # print(invoice_num)
+    # print(type(invoice_num))
 
     # Find corresponding ground truth
-    if invoice_num not in batch_idx:
+    if invoice_num not in batch_idx.keys():  # it exists but it cannot be found
         results['files_missing'].append(invoice_num)
+        # print(invoice_num)
+        # print("IM NOT HERE RIGHT?")
+        return []
 
-    results['files_matched'] += 1
+    # results['files_matched'] += 1
 
     # Get the batch row using the invoice number lookup
     batch_row_idx = batch_idx[invoice_num]
     batch_row = batch_df.iloc[batch_row_idx]
 
-    # Parse ground truth from OCRed Text
+    # Parse ground truth from OCRed Text, w/ same fields as json output file
     ground_truth = parse_ocred_text(batch_row['OCRed Text'])
 
     # Compare each domain
@@ -91,7 +111,7 @@ def validate_ocr_results(batch_df, output_json, domains=None, tolerance=STRICT_N
             continue
 
         gt_value = ground_truth[domain]
-        ocr_value = output_json.get(domain)
+        ocr_value = output_json[domain].iloc[0]
 
         domain_result = results['domain_results'][domain]
 
@@ -117,8 +137,8 @@ def validate_ocr_results(batch_df, output_json, domains=None, tolerance=STRICT_N
             continue
 
         # Determine field type and apply appropriate comparison
-        is_numeric = domain in ['Net Worth',
-                                'VAT', 'Gross Worth', 'Invoice Number']
+        is_numeric = domain in ['subtotal', 'tax',
+                                'total', 'invoice_number']
         is_date = domain in ['Invoice Date']
 
         if is_date:

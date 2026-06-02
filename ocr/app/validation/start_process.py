@@ -16,11 +16,13 @@ output_json = pd.read_json(
 print("Starting full validation on all domains...")
 print("This may take a moment...\n")
 
-# print(batch1_df.head(3)["OCRed Text"].iloc["Invoice no:"])
+# print(batch1_df.head(3)["OCRed Text"])
 # exit(0)
 
-# ground_truth_df = batch1_df["OCRed Text"]
-# print(type(ground_truth_df))
+ground_truth_df = batch1_df["OCRed Text"].iloc[0]
+print(ground_truth_df)
+exit(0)
+
 # print("\n\n\n\n")
 # print(type(output_json))
 
@@ -28,6 +30,15 @@ print("This may take a moment...\n")
 full_results = validate_ocr_results(
     batch_df=batch1_df, output_json=output_json)
 
-# # Print report
-# print_validation_report(
-#     full_results, show_mismatches=True, show_all_details=False)
+if isinstance(full_results, list):
+    print("=="*50)
+    print(
+        f"FILE W/ INVOICE NUMBER {output_json['invoice_number'].iloc[0]} IS MISSING.\n")
+    print("COULD NOT FIND GROUMD TRUTH\n\n")
+    exit(1)
+
+# print(full_results)
+
+# Print report
+print_validation_report(
+    full_results, show_mismatches=True, show_all_details=False)

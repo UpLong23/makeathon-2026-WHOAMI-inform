@@ -1,4 +1,22 @@
 import datetime
+import re
+
+
+def transform_fields_ocred_to_json(extracted_dict) -> dict:
+    domain_mapping = {
+        'Seller Name': 'vendor_normalized',
+        'Client Name': 'client_name',
+        'Seller Tax ID': 'seller_tax_id',
+        'Client Tax ID': 'client_tax_id',
+        'Invoice Number': 'invoice_number',
+        'Invoice Date': 'invoice_date',
+        'Net Worth': 'subtotal',
+        'VAT': 'tax',
+        'Gross Worth': 'total'
+    }
+
+    # Transform: old_key → new_key, but keep all values intact
+    return {domain_mapping[old_key]: value for old_key, value in extracted_dict.items()}
 
 
 def parse_ocred_text(ocred_text):
@@ -116,13 +134,13 @@ def parse_ocred_text(ocred_text):
         print(
             f"⚠️  Could not extract monetary values from Invoice Number: {extracted['Invoice Number']}")
 
-    return extracted
+    return transform_fields_ocred_to_json(extracted)
 
 
 def extract_date_components(date_str):
     """
-    Extract date components (year, month, day) from various date formats.
-    Returns a tuple of (year, month, day) as integers, or None if parsing fails.
+    Extract date components from various date formats.
+    Returns a string formatted as MM/DD/YYYY (e.g., '09/04/2019'), or None if parsing fails.
     Intelligently handles ambiguous formats like X/Y/YYYY by checking if values > 12.
     """
     if not date_str:
@@ -138,8 +156,8 @@ def extract_date_components(date_str):
 
     for date_format in unambiguous_formats:
         try:
-            dt = datetime.strptime(date_str, date_format)
-            return (dt.year, dt.month, dt.day)
+            dt = datetime.datetime.strptime(date_str, date_format)
+            return dt.strftime('%m/%d/%Y')
         except:
             continue
 
@@ -157,25 +175,25 @@ def extract_date_components(date_str):
             # If first value > 12, it must be day (DD/MM/YYYY format)
             if first > 12:
                 try:
-                    dt = datetime.strptime(
+                    dt = datetime.datetime.strptime(
                         date_str, '%d/%m/%Y' if '/' in date_str else '%d-%m-%Y')
-                    return (dt.year, dt.month, dt.day)
+                    return dt.strftime('%m/%d/%Y')
                 except:
                     pass
             # If second value > 12, it must be day (MM/DD/YYYY format)
             elif second > 12:
                 try:
-                    dt = datetime.strptime(
+                    dt = datetime.datetime.strptime(
                         date_str, '%m/%d/%Y' if '/' in date_str else '%m-%d-%Y')
-                    return (dt.year, dt.month, dt.day)
+                    return dt.strftime('%m/%d/%Y')
                 except:
                     pass
             # Both <= 12: ambiguous, try MM/DD/YYYY first (US format)
             else:
                 for date_format in formats:
                     try:
-                        dt = datetime.strptime(date_str, date_format)
-                        return (dt.year, dt.month, dt.day)
+                        dt = datetime.datetime.strptime(date_str, date_format)
+                        return dt.strftime('%m/%d/%Y')
                     except:
                         continue
 
@@ -187,8 +205,8 @@ def extract_date_components(date_str):
 
     for date_format in fallback_formats:
         try:
-            dt = datetime.strptime(date_str, date_format)
-            return (dt.year, dt.month, dt.day)
+            dt = datetime.datetime.strptime(date_str, date_format)
+            return dt.strftime('%m/%d/%Y')
         except:
             continue
 

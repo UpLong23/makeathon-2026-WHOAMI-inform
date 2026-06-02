@@ -1,7 +1,9 @@
+import pandas as pd
 
 # ============================================================================
 # REPORTING AND VISUALIZATION
 # ============================================================================
+
 
 def print_validation_report(validation_results, show_mismatches=True, show_all_details=False):
     """
@@ -32,9 +34,9 @@ def print_validation_report(validation_results, show_mismatches=True, show_all_d
     print("\n" + "-"*80)
     print("OVERALL ACCURACY")
     print("-"*80)
-    print(f"Total Comparisons: {results['summary']['total_comparisons']}")
-    print(f"Total Matches: {results['summary']['total_matches']}")
-    print(f"Overall Accuracy: {results['summary']['overall_accuracy']:.2f}%")
+    # print(f"Total Comparisons: {results['summary']['total_comparisons']}")
+    # print(f"Total Matches: {results['summary']['total_matches']}")
+    # print(f"Overall Accuracy: {results['summary']['overall_accuracy']:.2f}%")
 
     print("\n" + "-"*80)
     print("DOMAIN-BY-DOMAIN ACCURACY")
@@ -70,7 +72,7 @@ def print_validation_report(validation_results, show_mismatches=True, show_all_d
             if show_all_details:
                 # Show all details
                 for detail in dr['details']:
-                    print(f"  {detail['filename']}: {detail['status']}")
+                    print(f"  {detail['invoice_number']}: {detail['status']}")
                     print(f"    GT:  {detail['ground_truth']}")
                     print(f"    OCR: {detail['ocr_output']}")
                     if 'similarity_score' in detail:
@@ -86,7 +88,7 @@ def print_validation_report(validation_results, show_mismatches=True, show_all_d
                 if mismatches:
                     print(f"  {len(mismatches)} mismatches:")
                     for detail in mismatches[:10]:  # Show first 10
-                        print(f"    {detail['filename']}")
+                        print(f"    {detail['invoice_number']}")
                         print(f"      GT:  {detail['ground_truth']}")
                         print(f"      OCR: {detail['ocr_output']}")
                         if 'similarity_score' in detail:
@@ -131,7 +133,7 @@ def get_mismatch_dataframe(validation_results, domain=None):
             if detail['status'] == 'mismatch':
                 row = {
                     'Domain': dom,
-                    'Filename': detail['filename'],
+                    'Invoice Number': detail['invoice_number'],
                     'Ground Truth': detail['ground_truth'],
                     'OCR Output': detail['ocr_output'],
                     'Status': detail['status']
