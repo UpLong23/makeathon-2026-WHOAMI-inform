@@ -56,7 +56,14 @@ def process_image(
     logger.info("Processing image: %s", img_path)
 
     raw_text = run_ocr(img_path)
+    # print("---"*50)
+    # print("RAW TEXT RETURNED:")
+    # print(raw_text)
+    # exit(0)
     structured_text = structure_for_llm(raw_text)
+    # print("---"*50)
+    # print(structured_text)
+    # exit(0)
     fields = extract_fields(structured_text, client)
 
     # print("\n\n\nFIELDS ===")

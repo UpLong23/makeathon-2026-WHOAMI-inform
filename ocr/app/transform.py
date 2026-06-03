@@ -106,7 +106,10 @@ FIELDS TO EXTRACT:
 - Line Items: List of individual products/services from the ITEMS section of the invoice. For each row extract:
     • description: full multi-line item name/description as it appears
     • quantity: numeric quantity (as string, e.g. "1.00", "5.00")
-    • total_price: the Net Worth column value for that line item (before tax, as string)
+    • net_price: unit price per item (before tax, as string)
+    • net_worth: total net value for this line item (before tax, as string)
+    • vat: VAT percentage as shown on the invoice (as string, e.g., "10%", "20%")
+    • gross_worth: total gross value for this line item (after tax, as string)
 
 NUMBER CLEANING RULES (CRITICAL — apply to all amounts):
 Step 1: Remove ALL spaces (both leading and internal): " 84 944,82" → "84944,82"
