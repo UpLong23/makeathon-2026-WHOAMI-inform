@@ -20,11 +20,16 @@ print("This may take a moment...\n")
 # exit(0)
 
 ground_truth_df = batch1_df["OCRed Text"].iloc[0]
-print(ground_truth_df)
-exit(0)
+# print(ground_truth_df)
+# exit(0)
 
 # print("\n\n\n\n")
 # print(type(output_json))
+
+# print("HEREEEEE")
+# result = batch1_df[batch1_df["OCRed Text"].str.contains("13407985", na=False)]
+# print(result['OCRed Text'].iloc[0])
+# exit(0)
 
 # Run validation on all domains
 full_results = validate_ocr_results(

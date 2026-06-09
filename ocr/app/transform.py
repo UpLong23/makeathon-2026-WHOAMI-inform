@@ -13,11 +13,18 @@ def structure_for_llm(raw_text: str) -> str:
     seller_lines = []
     client_lines = []
     general_lines = []
+    in_items_section = False
 
     for line in raw_text.split("\n"):
         if not line.strip():
             continue
-        if "\t" in line and "Date" not in line:
+
+        # Track if we've entered the items section
+        if "ITEMS" in line.upper():
+            in_items_section = True
+
+        # Only split by tab if NOT in items section (to keep items intact)
+        if "\t" in line and "Date" not in line and not in_items_section:
             parts = [p.strip() for p in line.split("\t", 1)]
             left = parts[0] if len(parts) > 0 else ""
             right = parts[1] if len(parts) > 1 else ""

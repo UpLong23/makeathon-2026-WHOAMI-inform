@@ -2,6 +2,17 @@ import datetime
 import re
 
 
+def extract_line_items(ocred_text) -> list:
+
+    match = re.search(r"Gross worth\s*(.*?)\s*SUMMARY", ocred_text, re.DOTALL)
+
+    if match:
+        result = match.group(1)
+        print(result)
+    exit(0)
+    return []
+
+
 def transform_fields_ocred_to_json(extracted_dict) -> dict:
     domain_mapping = {
         'Seller Name': 'vendor_normalized',
@@ -12,11 +23,12 @@ def transform_fields_ocred_to_json(extracted_dict) -> dict:
         'Invoice Date': 'invoice_date',
         'Net Worth': 'subtotal',
         'VAT': 'tax',
-        'Gross Worth': 'total'
+        'Gross Worth': 'total',
+        'Line Items': 'line_items'
     }
 
     # Transform: old_key → new_key, but keep all values intact
-    return {domain_mapping[old_key]: value for old_key, value in extracted_dict.items()}
+    return {domain_mapping.get(old_key, old_key): value for old_key, value in extracted_dict.items()}
 
 
 def parse_ocred_text(ocred_text):
@@ -33,7 +45,8 @@ def parse_ocred_text(ocred_text):
         'Invoice Date': None,
         'Net Worth': None,
         'VAT': None,
-        'Gross Worth': None
+        'Gross Worth': None,
+        'Line Items': [None]
     }
 
     # Tax ID pattern (XXX-XX-XXXX format)
@@ -52,6 +65,7 @@ def parse_ocred_text(ocred_text):
     money_pattern = r'[\$\s]*(\d+\.?\d*)'
 
     lines = ocred_text.split('\n')
+    # print(lines)
 
     # Extract invoice number
     for line in lines:
@@ -69,6 +83,11 @@ def parse_ocred_text(ocred_text):
                 break
         if extracted['Invoice Date']:
             break
+
+    # Extract items
+    extracted['Line Items'] = extract_line_items(ocred_text)
+    print(extracted['Line Items'])
+    exit(0)
 
     # Extract tax IDs (looking for two of them - seller and client)
     tax_ids = re.findall(tax_id_pattern, ocred_text)

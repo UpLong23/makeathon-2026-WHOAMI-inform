@@ -48,7 +48,8 @@ def validate_ocr_results(batch_df, output_json, domains=None, tolerance=STRICT_N
             'invoice_date',
             'subtotal',
             'tax',
-            'total'
+            'total',
+            'line_items'
         ]
     elif isinstance(domains, str):
         domains = [domains]
@@ -101,6 +102,9 @@ def validate_ocr_results(batch_df, output_json, domains=None, tolerance=STRICT_N
     # Get the batch row using the invoice number lookup
     batch_row_idx = batch_idx[invoice_num]
     batch_row = batch_df.iloc[batch_row_idx]
+    # print("\n\OCRED TEXT WITHIN VALIDATE FUNCTION")
+    # print(batch_row['OCRed Text'])  # PROBLEM WITH THE OCRED NOT BEING CORRECT
+    # exit(0)
 
     # Parse ground truth from OCRed Text, w/ same fields as json output file
     ground_truth = parse_ocred_text(batch_row['OCRed Text'])
