@@ -2,15 +2,83 @@ import datetime
 import re
 
 
-def extract_line_items(ocred_text) -> list:
+import re
+import json
+
+
+import re
+import json
+
+
+def parse_line_items(ocred_text: str) -> list:
 
     match = re.search(r"Gross worth\s*(.*?)\s*SUMMARY", ocred_text, re.DOTALL)
+    if not match:
+        return []
+    truncated_text = match.group(1)
 
-    if match:
-        result = match.group(1)
-        print(result)
-    exit(0)
-    return []
+    # Clean OCR noise: digits fused onto end of words e.g. "Pulitzer8" -> "Pulitzer"
+    truncated_text = re.sub(r'(?<=[a-zA-Z])\d+(?=\s)', '', truncated_text)
+
+    def normalize_number(s: str) -> str:
+        return s.replace(" ", "").replace(",", ".")
+
+    # First pass: find all item start positions by detecting "N." or sequential "N " pattern
+    # Use a single pattern anchored on "each" to find all items
+    item_pattern = re.compile(
+        r"(\d+)\.?\s+"                           # item number (captured)
+        r"(.*?)"                                  # prefix description (lazy)
+        r"(\d{1,4},\d{2})\s+each\s+"             # quantity
+        r"([\d][\d\s]*,\d{2})\s+"                # net_price
+        r"[\d][\d\s]*,\d{2}\s+"                  # junk net_worth — discard
+        r"(\d+%)\s+"                              # VAT
+        r"([\d][\d\s]*,\d{2})\s*",               # gross_worth
+        re.DOTALL
+    )
+
+    # Collect all matches first so we know their spans
+    matches = list(item_pattern.finditer(truncated_text))
+
+    line_items = []
+
+    for i, m in enumerate(matches):
+        item_num = int(m.group(1))
+        prefix_desc = m.group(2).strip()
+        quantity = normalize_number(m.group(3))
+        net_price = normalize_number(m.group(4))
+        vat = m.group(5).strip()
+        gross_worth = normalize_number(m.group(6))
+
+        # Suffix: everything from end of this match to start of next match
+        # (or end of string), but ONLY if the next match is sequential (item_num + 1)
+        end_of_this = m.end()
+        if i + 1 < len(matches):
+            next_match = matches[i + 1]
+            next_num = int(next_match.group(1))
+            if next_num == item_num + 1:
+                # Suffix is text between end of numeric fields and start of next item
+                suffix_desc = truncated_text[end_of_this:next_match.start()].strip(
+                )
+            else:
+                # Next "match" isn't the sequential item — don't grab suffix
+                suffix_desc = ""
+        else:
+            # Last item — take everything remaining
+            suffix_desc = truncated_text[end_of_this:].strip()
+
+        net_worth = f"{float(quantity) * float(net_price):.2f}"
+        full_desc = re.sub(r"\s+", " ", f"{prefix_desc} {suffix_desc}").strip()
+
+        line_items.append({
+            "description": full_desc,
+            "quantity":    quantity,
+            "net_price":   net_price,
+            "net_worth":   net_worth,
+            "vat":         vat,
+            "gross_worth": gross_worth,
+        })
+
+    return line_items
 
 
 def transform_fields_ocred_to_json(extracted_dict) -> dict:
@@ -85,9 +153,9 @@ def parse_ocred_text(ocred_text):
             break
 
     # Extract items
-    extracted['Line Items'] = extract_line_items(ocred_text)
-    print(extracted['Line Items'])
-    exit(0)
+    extracted['Line Items'] = parse_line_items(ocred_text)
+    # print(extracted['Line Items'])
+    # exit(0)
 
     # Extract tax IDs (looking for two of them - seller and client)
     tax_ids = re.findall(tax_id_pattern, ocred_text)
@@ -116,34 +184,44 @@ def parse_ocred_text(ocred_text):
         except:
             return None
 
-    def extract_three_numbers_after_total(text):
+    def extract_three_numbers_after_total(ocred_text: str):
         """
-        Extracts the first 3 numeric values after "Total" keyword.
-        Handles missing/inconsistent currency symbols.
-        Returns (net_worth, vat, gross_worth) as floats or (None, None, None).
+        Extracts subtotal, tax, and total from the Total line.
+        Returns (subtotal, tax, total) as floats or (None, None, None).
         """
-        # Find Total line
-        total_match = re.search(r'Total\s+(.*?)(?:\n|$)', text, re.IGNORECASE)
+
+        def normalize_number(s: str) -> float:
+            return float(s.replace(" ", "").replace(",", "."))
+
+        # Grab everything after "Total" on that line
+        total_match = re.search(r'Total\s+(.*?)(?:\n|$)',
+                                ocred_text, re.IGNORECASE)
         if not total_match:
             return None, None, None
 
         total_line = total_match.group(1)
 
-        # Extract all numeric sequences (including spaces and commas)
-        numbers = re.findall(r'[\d\s,]+(?:\.\d+)?', total_line)
+        # Extract all European-formatted numbers (digits, optional spaces, comma, 2 decimals)
+        numbers = re.findall(r'\d[\d\s]*,\d{2}', total_line)
 
         if len(numbers) < 3:
             return None, None, None
 
-        # Take first 3 numbers
-        net = clean_num(numbers[0])
-        vat = clean_num(numbers[1])
-        gross = clean_num(numbers[2])
+        subtotal = normalize_number(numbers[0])  # 1 335,86 -> 1335.86
+        tax = normalize_number(numbers[1])  # 133,59   -> 133.59
+        total = normalize_number(numbers[2])  # 1 469,45 -> 1469.45
 
-        return net, vat, gross
+        return subtotal, tax, total
 
+    # print(ocred_text)
+    # print("\n")
     # Try to extract monetary values
     net, vat, gross = extract_three_numbers_after_total(ocred_text)
+    print("\n\nTOTAL VALUES RETURNED")
+    # print(net)
+    # print(vat)
+    # print(gross)
+    # exit(0)
 
     extracted['Net Worth'] = net
     extracted['VAT'] = vat
