@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Link, useNavigate } from 'react-router-dom';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Download,
   FileText,
@@ -24,7 +24,7 @@ import {
   Upload,
   X,
   LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 import React, {
   useState,
   useRef,
@@ -33,7 +33,7 @@ import React, {
   MouseEvent,
   DragEvent,
   ChangeEvent,
-} from 'react';
+} from "react";
 
 /* ─────────────────────────────────────────────
    Types
@@ -43,11 +43,12 @@ interface UploadedFile {
   name: string;
   type: string;
   url: string;
+  file?: File;
 }
 
 interface Message {
   id: number;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   text: string;
   files?: UploadedFile[];
   timestamp: Date;
@@ -64,11 +65,11 @@ interface NavItem {
 ───────────────────────────────────────────── */
 const MAX_FILE_MB = 10;
 const ALLOWED_TYPES: string[] = [
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/jpg',
-  'image/webp',
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/jpg",
+  "image/webp",
 ];
 
 const SIDEBAR_MIN = 52;
@@ -76,24 +77,36 @@ const SIDEBAR_MAX = 300;
 const SIDEBAR_DEFAULT = 220;
 const SIDEBAR_COLLAPSE_THRESHOLD = 100;
 
-const BACKEND_URL = 'http://127.0.0.1:8000';
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: LayoutDashboard, label: 'Dashboard', to: '/dashboard' },
-  { icon: MessageSquare, label: 'Chat Assistant', to: '/chat' },
-  { icon: Landmark, label: 'Reconciliation', to: '/reconciliation' },
-  { icon: Settings, label: 'Settings', to: '/settings' },
+  { icon: LayoutDashboard, label: "Dashboard", to: "/dashboard" },
+  { icon: MessageSquare, label: "Chat Assistant", to: "/chat" },
+  { icon: Landmark, label: "Reconciliation", to: "/reconciliation" },
+  { icon: Settings, label: "Settings", to: "/settings" },
 ];
 
 const QUICK_PROMPTS: { label: string; text: string }[] = [
-  { label: '🧾 Parse a receipt', text: 'Paste a receipt and extract all line items into a table' },
-  { label: '➗ Split a bill', text: 'Split a €120 dinner bill equally between 4 people' },
-  { label: '💰 Track my spending', text: 'What is my total spend so far this session?' },
-  { label: '🔍 Find duplicates', text: 'Check these receipts for any duplicate charges' },
+  {
+    label: "🧾 Parse a receipt",
+    text: "Paste a receipt and extract all line items into a table",
+  },
+  {
+    label: "➗ Split a bill",
+    text: "Split a €120 dinner bill equally between 4 people",
+  },
+  {
+    label: "💰 Track my spending",
+    text: "What is my total spend so far this session?",
+  },
+  {
+    label: "🔍 Find duplicates",
+    text: "Check these receipts for any duplicate charges",
+  },
 ];
 
 function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function makeSessionId(): string {
@@ -119,40 +132,54 @@ function useResize(
   const maxRef = useRef(max);
   const dirRef = useRef(direction);
 
-  useEffect(() => { minRef.current = min; }, [min]);
-  useEffect(() => { maxRef.current = max; }, [max]);
-  useEffect(() => { dirRef.current = direction; }, [direction]);
+  useEffect(() => {
+    minRef.current = min;
+  }, [min]);
+  useEffect(() => {
+    maxRef.current = max;
+  }, [max]);
+  useEffect(() => {
+    dirRef.current = direction;
+  }, [direction]);
 
   useEffect(() => {
     const onMove = (e: globalThis.MouseEvent) => {
       if (!dragging.current) return;
       const delta = (e.clientX - startX.current) * dirRef.current;
-      setWidth(Math.min(maxRef.current, Math.max(minRef.current, startW.current + delta)));
+      setWidth(
+        Math.min(
+          maxRef.current,
+          Math.max(minRef.current, startW.current + delta),
+        ),
+      );
     };
     const onUp = () => {
       if (!dragging.current) return;
       dragging.current = false;
       setResizing(false);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
     };
   }, []);
 
-  const onMouseDown = useCallback((e: MouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragging.current = true;
-    startX.current = e.clientX;
-    startW.current = width;
-    setResizing(true);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, [width]);
+  const onMouseDown = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      dragging.current = true;
+      startX.current = e.clientX;
+      startW.current = width;
+      setResizing(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [width],
+  );
 
   return [width, onMouseDown, isResizing];
 }
@@ -180,41 +207,51 @@ function ResizeHandle({ onMouseDown }: ResizeHandleProps) {
 ───────────────────────────────────────────── */
 export default function App() {
   const [darkMode, setDarkMode] = useState(
-    () => localStorage.getItem('theme') === 'dark'
-  ); const [sessionId, setSessionId] = useState<string>(makeSessionId);
+    () => localStorage.getItem("theme") === "dark",
+  );
+  const [sessionId, setSessionId] = useState<string>(makeSessionId);
 
-  const [sidebarWidth, onSidebarResize] = useResize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX);
-  const [previewWidth, onPreviewResize, isResizingPreview] = useResize(480, 280, 900, -1);
+  const [sidebarWidth, onSidebarResize] = useResize(
+    SIDEBAR_DEFAULT,
+    SIDEBAR_MIN,
+    SIDEBAR_MAX,
+  );
+  const [previewWidth, onPreviewResize, isResizingPreview] = useResize(
+    480,
+    280,
+    900,
+    -1,
+  );
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<UploadedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
-  const [model, setModel] = useState<'auto' | 'gemini' | 'local'>('auto');
+  const [model, setModel] = useState<"auto" | "gemini" | "local">("auto");
 
   const prevSelectedFile = useRef<UploadedFile | null>(null);
   useEffect(() => {
     const prev = prevSelectedFile.current;
     if (prev && (!selectedFile || selectedFile.name !== prev.name)) {
       fetch(`${BACKEND_URL}/api/session/${sessionId}/close-file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: prev.name }),
-      }).catch(() => { });
+      }).catch(() => {});
     }
     if (selectedFile && (!prev || selectedFile.name !== prev.name)) {
       fetch(`${BACKEND_URL}/api/session/${sessionId}/open-file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: selectedFile.name }),
-      }).catch(() => { });
+      }).catch(() => {});
     }
     prevSelectedFile.current = selectedFile;
   }, [selectedFile, sessionId]);
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+    document.documentElement.classList.toggle("dark", darkMode);
+    localStorage.setItem("theme", darkMode ? "dark" : "light");
   }, [darkMode]);
   const addFiles = useCallback((files: FileList) => {
     Array.from(files).forEach((file) => {
@@ -223,7 +260,13 @@ export default function App() {
       const url = URL.createObjectURL(file);
       setStagedFiles((prev) => [
         ...prev,
-        { id: Date.now() + Math.random(), name: file.name, type: file.type, url },
+        {
+          id: Date.now() + Math.random(),
+          name: file.name,
+          type: file.type,
+          url,
+          file,
+        },
       ]);
     });
   }, []);
@@ -232,7 +275,8 @@ export default function App() {
     (id: number) => {
       setStagedFiles((prev) => {
         const f = prev.find((x) => x.id === id);
-        if (f && (!selectedFile || selectedFile.id !== f.id)) URL.revokeObjectURL(f.url);
+        if (f && (!selectedFile || selectedFile.id !== f.id))
+          URL.revokeObjectURL(f.url);
         return prev.filter((x) => x.id !== id);
       });
     },
@@ -240,7 +284,9 @@ export default function App() {
   );
 
   const handleNewAnalysis = useCallback(() => {
-    fetch(`${BACKEND_URL}/api/session/${sessionId}`, { method: 'DELETE' }).catch(() => { });
+    fetch(`${BACKEND_URL}/api/session/${sessionId}`, {
+      method: "DELETE",
+    }).catch(() => {});
     setSessionId(makeSessionId());
     setMessages([]);
     setStagedFiles([]);
@@ -259,7 +305,7 @@ export default function App() {
 
       const userMsg: Message = {
         id: Date.now(),
-        role: 'user',
+        role: "user",
         text: trimmed,
         files: stagedFiles.length > 0 ? [...stagedFiles] : undefined,
         timestamp: new Date(),
@@ -273,8 +319,8 @@ export default function App() {
 
       const aiId = Date.now() + 1;
 
-      const receiveBuffer = { current: '' };
-      const displayBuffer = { current: '' };
+      const receiveBuffer = { current: "" };
+      const displayBuffer = { current: "" };
       const networkDone = { current: false };
       const isFirstChunk = { current: true };
       const pendingFiles: { current: UploadedFile[] } = { current: [] };
@@ -284,7 +330,7 @@ export default function App() {
       const rafFlush = () => {
         const chunk = displayBuffer.current;
         if (!chunk) return;
-        displayBuffer.current = '';
+        displayBuffer.current = "";
 
         if (isFirstChunk.current) {
           setIsTyping(false);
@@ -292,16 +338,21 @@ export default function App() {
             ...prev,
             {
               id: aiId,
-              role: 'assistant',
+              role: "assistant",
               text: chunk,
               timestamp: new Date(),
-              files: pendingFiles.current.length > 0 ? pendingFiles.current : undefined,
+              files:
+                pendingFiles.current.length > 0
+                  ? pendingFiles.current
+                  : undefined,
             },
           ]);
           isFirstChunk.current = false;
         } else {
           setMessages((prev) =>
-            prev.map((m) => (m.id === aiId ? { ...m, text: m.text + chunk } : m)),
+            prev.map((m) =>
+              m.id === aiId ? { ...m, text: m.text + chunk } : m,
+            ),
           );
         }
       };
@@ -327,10 +378,17 @@ export default function App() {
 
       startDrip();
 
+      const formData = new FormData();
+      formData.append("message", trimmed);
+      formData.append("session_id", sessionId);
+      formData.append("model", model);
+      stagedFiles.forEach((f) => {
+        if (f.file) formData.append("files", f.file);
+      });
+
       fetch(`${BACKEND_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, session_id: sessionId, model }),
+        method: "POST",
+        body: formData,
       })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -339,22 +397,29 @@ export default function App() {
 
           const pump = (): Promise<void> =>
             reader.read().then(({ done, value }) => {
-              if (done) { networkDone.current = true; return; }
+              if (done) {
+                networkDone.current = true;
+                return;
+              }
 
               const raw = decoder.decode(value, { stream: true });
-              for (const line of raw.split('\n')) {
-                if (line.startsWith('data: __files__')) {
+              for (const line of raw.split("\n")) {
+                if (line.startsWith("data: __files__")) {
                   try {
                     const files: UploadedFile[] = JSON.parse(line.slice(15));
                     pendingFiles.current = files.map((f) => ({
                       ...f,
-                      url: f.url.startsWith('http') ? f.url : `${BACKEND_URL}${f.url}`,
+                      url: f.url.startsWith("http")
+                        ? f.url
+                        : `${BACKEND_URL}${f.url}`,
                     }));
-                  } catch { /* ignore malformed */ }
+                  } catch {
+                    /* ignore malformed */
+                  }
                   continue;
                 }
-                if (line.startsWith('data: ')) {
-                  const token = line.slice(6).replace(/\\n/g, '\n');
+                if (line.startsWith("data: ")) {
+                  const token = line.slice(6).replace(/\\n/g, "\n");
                   receiveBuffer.current += token;
                 }
               }
@@ -375,16 +440,19 @@ export default function App() {
               ...prev,
               {
                 id: aiId,
-                role: 'assistant',
+                role: "assistant",
                 text: errMsg,
                 timestamp: new Date(),
-                files: pendingFiles.current.length > 0 ? pendingFiles.current : undefined,
+                files:
+                  pendingFiles.current.length > 0
+                    ? pendingFiles.current
+                    : undefined,
               },
             ]);
           } else {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === aiId ? { ...m, text: m.text + '\n' + errMsg } : m,
+                m.id === aiId ? { ...m, text: m.text + "\n" + errMsg } : m,
               ),
             );
           }
@@ -397,7 +465,9 @@ export default function App() {
   const previewOpen = selectedFile !== null;
 
   return (
-    <div className={`flex h-screen w-screen overflow-hidden bg-background text-on-surface font-body-md selection:bg-secondary-fixed ${darkMode ? 'dark' : ''}`}>
+    <div
+      className={`flex h-screen w-screen overflow-hidden bg-background text-on-surface font-body-md selection:bg-secondary-fixed ${darkMode ? "dark" : ""}`}
+    >
       <Sidebar
         width={sidebarWidth}
         collapsed={collapsed}
@@ -447,7 +517,13 @@ interface SidebarProps {
   onNewAnalysis: () => void;
 }
 
-function Sidebar({ width, collapsed, darkMode, onToggleDark, onNewAnalysis }: SidebarProps) {
+function Sidebar({
+  width,
+  collapsed,
+  darkMode,
+  onToggleDark,
+  onNewAnalysis,
+}: SidebarProps) {
   // useNavigate is safe here because App is rendered inside <BrowserRouter>
   const navigate = useNavigate();
 
@@ -458,8 +534,9 @@ function Sidebar({ width, collapsed, darkMode, onToggleDark, onNewAnalysis }: Si
     >
       {/* Logo */}
       <div
-        className={`panel-header flex items-center gap-3 border-b border-outline flex-shrink-0 ${collapsed ? 'justify-center px-0' : 'px-4'
-          }`}
+        className={`panel-header flex items-center gap-3 border-b border-outline flex-shrink-0 ${
+          collapsed ? "justify-center px-0" : "px-4"
+        }`}
       >
         <div className="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center flex-shrink-0">
           <FileText size={18} />
@@ -478,25 +555,30 @@ function Sidebar({ width, collapsed, darkMode, onToggleDark, onNewAnalysis }: Si
             key={to}
             to={to}
             title={collapsed ? label : undefined}
-            className={`flex items-center gap-3 py-2 rounded-lg transition-colors font-medium overflow-hidden whitespace-nowrap ${collapsed ? 'justify-center mx-1 px-0' : 'mx-2 px-3'
-              } ${
+            className={`flex items-center gap-3 py-2 rounded-lg transition-colors font-medium overflow-hidden whitespace-nowrap ${
+              collapsed ? "justify-center mx-1 px-0" : "mx-2 px-3"
+            } ${
               /* highlight Chat Assistant as active on /chat */
-              to === '/chat'
-                ? 'text-primary bg-surface-container-high'
-                : 'text-on-surface-variant hover:bg-surface-container-high'
-              }`}
+              to === "/chat"
+                ? "text-primary bg-surface-container-high"
+                : "text-on-surface-variant hover:bg-surface-container-high"
+            }`}
           >
             <Icon size={20} className="flex-shrink-0" />
-            {!collapsed && <span className="text-sm font-medium truncate">{label}</span>}
+            {!collapsed && (
+              <span className="text-sm font-medium truncate">{label}</span>
+            )}
           </Link>
         ))}
       </nav>
 
       {/* Footer actions */}
-      <div className={`panel-footer flex-shrink-0 border-t border-outline space-y-2 ${collapsed ? 'px-1' : 'px-3'}`}>
+      <div
+        className={`panel-footer flex-shrink-0 border-t border-outline space-y-2 ${collapsed ? "px-1" : "px-3"}`}
+      >
         {collapsed ? (
           <button
-            title={darkMode ? 'Light mode' : 'Dark mode'}
+            title={darkMode ? "Light mode" : "Dark mode"}
             onClick={onToggleDark}
             className="w-full flex items-center justify-center p-2 rounded-lg border border-outline text-on-surface-variant hover:bg-surface-container-high transition-colors"
           >
@@ -507,7 +589,9 @@ function Sidebar({ width, collapsed, darkMode, onToggleDark, onNewAnalysis }: Si
             onClick={onToggleDark}
             className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-outline text-on-surface-variant hover:bg-surface-container-high transition-colors"
           >
-            <span className="text-sm font-medium">{darkMode ? 'Light mode' : 'Dark mode'}</span>
+            <span className="text-sm font-medium">
+              {darkMode ? "Light mode" : "Dark mode"}
+            </span>
             {darkMode ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         )}
@@ -567,8 +651,8 @@ interface ChatPanelProps {
   addFiles: (files: FileList) => void;
   removeStaged: (id: number) => void;
   handleSend: (text: string, refocus: () => void) => void;
-  model: 'auto' | 'gemini' | 'local';
-  onModelChange: (m: 'auto' | 'gemini' | 'local') => void;
+  model: "auto" | "gemini" | "local";
+  onModelChange: (m: "auto" | "gemini" | "local") => void;
 }
 
 function ChatPanel({
@@ -584,22 +668,28 @@ function ChatPanel({
   model,
   onModelChange,
 }: ChatPanelProps) {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
   const [dragActive, setDragActive] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
   const focusTextarea = useCallback(() => {
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragActive(true); };
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragActive(false); };
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+  };
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragActive(false);
@@ -607,28 +697,30 @@ function ChatPanel({
   };
   const handleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) addFiles(e.target.files);
-    e.target.value = '';
+    e.target.value = "";
   };
 
   const submit = useCallback(() => {
     if (isProcessing) return;
     if (!draft.trim() && stagedFiles.length === 0) return;
     handleSend(draft, focusTextarea);
-    setDraft('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    setDraft("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [draft, stagedFiles, handleSend, focusTextarea, isProcessing]);
 
-  const chipLabel = (mime: string) => (mime === 'application/pdf' ? 'PDF' : 'IMG');
+  const chipLabel = (mime: string) =>
+    mime === "application/pdf" ? "PDF" : "IMG";
   const chipClass = (mime: string) =>
-    mime === 'application/pdf' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800';
+    mime === "application/pdf"
+      ? "bg-red-100 text-red-800"
+      : "bg-blue-100 text-blue-800";
 
   const canSend = !isProcessing && (!!draft.trim() || stagedFiles.length > 0);
-  const statusDot = isTyping ? 'bg-amber-400' : 'bg-green-500';
-  const statusLabel = isTyping ? 'Typing…' : 'Online';
+  const statusDot = isTyping ? "bg-amber-400" : "bg-green-500";
+  const statusLabel = isTyping ? "Typing…" : "Online";
 
   return (
     <section className="flex flex-col h-full bg-surface overflow-hidden flex-1 min-w-0">
-
       {/* ── Header ── */}
       <div className="panel-header flex items-center justify-between px-4 border-b border-outline flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -636,25 +728,34 @@ function ChatPanel({
             <Sparkles size={15} />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-primary truncate">Analysis Assistant</p>
+            <p className="text-sm font-semibold text-primary truncate">
+              Analysis Assistant
+            </p>
             <p className="text-xs text-on-surface-variant flex items-center gap-1">
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDot}`} />
+              <span
+                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDot}`}
+              />
               {statusLabel}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
           <div className="flex items-center gap-0.5 border border-outline rounded-lg overflow-hidden flex-shrink-0">
-            {(['auto', 'gemini', 'local'] as const).map((opt) => (
+            {(["auto", "gemini", "local"] as const).map((opt) => (
               <button
                 key={opt}
                 onClick={() => onModelChange(opt)}
-                className={`px-2 py-1 text-[11px] font-medium leading-none transition-colors ${model === opt
-                  ? 'bg-primary text-on-primary'
-                  : 'text-on-surface-variant hover:bg-surface-container'
-                  }`}
+                className={`px-2 py-1 text-[11px] font-medium leading-none transition-colors ${
+                  model === opt
+                    ? "bg-primary text-on-primary"
+                    : "text-on-surface-variant hover:bg-surface-container"
+                }`}
               >
-                {opt === 'auto' ? 'Auto' : opt === 'gemini' ? 'Gemini' : 'Local'}
+                {opt === "auto"
+                  ? "Auto"
+                  : opt === "gemini"
+                    ? "Gemini"
+                    : "Local"}
               </button>
             ))}
           </div>
@@ -666,24 +767,35 @@ function ChatPanel({
 
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 bg-background custom-scrollbar">
-
         {messages.length === 0 && !isTyping && (
           <div className="flex flex-col items-center justify-center h-full gap-6 select-none">
             <div className="flex flex-col items-center gap-2">
               <div className="w-11 h-11 rounded-2xl bg-surface-container-low border border-outline flex items-center justify-center">
-                <Sparkles size={20} className="text-on-surface-variant opacity-50" />
+                <Sparkles
+                  size={20}
+                  className="text-on-surface-variant opacity-50"
+                />
               </div>
-              <p className="text-sm font-medium text-on-surface opacity-60">How can I help you?</p>
+              <p className="text-sm font-medium text-on-surface opacity-60">
+                How can I help you?
+              </p>
             </div>
-            <div className="grid grid-cols-2 gap-2.5 w-full" style={{ maxWidth: '400px' }}>
+            <div
+              className="grid grid-cols-2 gap-2.5 w-full"
+              style={{ maxWidth: "400px" }}
+            >
               {QUICK_PROMPTS.map(({ label, text }) => (
                 <button
                   key={label}
                   onClick={() => handleSend(text, focusTextarea)}
                   className="flex flex-col gap-1 text-left px-4 py-3 rounded-2xl border border-outline bg-surface-container-lowest hover:bg-surface-container hover:border-on-surface/20 active:scale-[0.97] transition-all duration-150 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <span className="text-xs font-semibold text-on-surface">{label}</span>
-                  <span className="text-[11px] text-on-surface-variant leading-snug">{text}</span>
+                  <span className="text-xs font-semibold text-on-surface">
+                    {label}
+                  </span>
+                  <span className="text-[11px] text-on-surface-variant leading-snug">
+                    {text}
+                  </span>
                 </button>
               ))}
             </div>
@@ -691,30 +803,39 @@ function ChatPanel({
         )}
 
         {messages.map((msg) =>
-          msg.role === 'user' ? (
+          msg.role === "user" ? (
             <div key={msg.id} className="flex flex-col items-end">
               {msg.files && msg.files.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-1.5 justify-end">
                   {msg.files.map((f) => (
                     <button
                       key={f.id}
-                      onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}
-                      className={`inline-flex items-center gap-1.5 border rounded-lg px-2 py-1 transition-colors ${selectedFile?.id === f.id
-                        ? 'border-primary/50 bg-primary/10'
-                        : 'border-outline bg-surface hover:bg-surface-container-high'
-                        }`}
+                      onClick={() =>
+                        setSelectedFile(selectedFile?.id === f.id ? null : f)
+                      }
+                      className={`inline-flex items-center gap-1.5 border rounded-lg px-2 py-1 transition-colors ${
+                        selectedFile?.id === f.id
+                          ? "border-primary/50 bg-primary/10"
+                          : "border-outline bg-surface hover:bg-surface-container-high"
+                      }`}
                     >
-                      <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}>
+                      <span
+                        className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}
+                      >
                         {chipLabel(f.type)}
                       </span>
-                      <span className="text-xs text-on-surface truncate max-w-[110px]">{f.name}</span>
+                      <span className="text-xs text-on-surface truncate max-w-[110px]">
+                        {f.name}
+                      </span>
                     </button>
                   ))}
                 </div>
               )}
               {msg.text && (
                 <div className="bg-primary text-on-primary px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[88%] shadow-sm">
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {msg.text}
+                  </p>
                 </div>
               )}
               <span className="text-[11px] text-on-surface-variant mt-1 mr-1">
@@ -733,22 +854,33 @@ function ChatPanel({
                       {msg.files.map((f) => (
                         <button
                           key={f.id}
-                          onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}
-                          className={`inline-flex items-center gap-1.5 border rounded-lg px-2 py-1 transition-colors ${selectedFile?.id === f.id
-                            ? 'border-primary/50 bg-primary/10'
-                            : 'border-outline bg-surface hover:bg-surface-container-high'
-                            }`}
+                          onClick={() =>
+                            setSelectedFile(
+                              selectedFile?.id === f.id ? null : f,
+                            )
+                          }
+                          className={`inline-flex items-center gap-1.5 border rounded-lg px-2 py-1 transition-colors ${
+                            selectedFile?.id === f.id
+                              ? "border-primary/50 bg-primary/10"
+                              : "border-outline bg-surface hover:bg-surface-container-high"
+                          }`}
                         >
-                          <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}>
+                          <span
+                            className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}
+                          >
                             {chipLabel(f.type)}
                           </span>
-                          <span className="text-xs text-on-surface truncate max-w-[110px]">{f.name}</span>
+                          <span className="text-xs text-on-surface truncate max-w-[110px]">
+                            {f.name}
+                          </span>
                         </button>
                       ))}
                     </div>
                   )}
                   <div className="bg-surface-container-lowest border border-outline px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm text-on-surface markdown-body">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.text}
+                    </ReactMarkdown>
                   </div>
                 </div>
               </div>
@@ -767,10 +899,11 @@ function ChatPanel({
       <div className="panel-footer px-4 bg-surface flex-shrink-0 border-t border-outline">
         <div className="w-full max-w-2xl mx-auto">
           <div
-            className={`relative rounded-2xl transition-all duration-150 ${dragActive
-              ? 'border-2 border-dashed border-primary bg-primary/5'
-              : 'border border-outline bg-surface-container-lowest shadow-[0_2px_16px_rgba(0,0,0,0.07)] focus-within:border-primary focus-within:shadow-[0_2px_20px_rgba(0,0,0,0.11)]'
-              }`}
+            className={`relative rounded-2xl transition-all duration-150 ${
+              dragActive
+                ? "border-2 border-dashed border-primary bg-primary/5"
+                : "border border-outline bg-surface-container-lowest shadow-[0_2px_16px_rgba(0,0,0,0.07)] focus-within:border-primary focus-within:shadow-[0_2px_20px_rgba(0,0,0,0.11)]"
+            }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -778,8 +911,12 @@ function ChatPanel({
             {dragActive && (
               <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center gap-1 pointer-events-none z-10">
                 <Upload size={20} className="text-primary" />
-                <span className="text-sm font-medium text-primary">Drop to attach</span>
-                <span className="text-xs text-on-surface-variant">JPG, PNG or PDF · max 10 MB</span>
+                <span className="text-sm font-medium text-primary">
+                  Drop to attach
+                </span>
+                <span className="text-xs text-on-surface-variant">
+                  JPG, PNG or PDF · max 10 MB
+                </span>
               </div>
             )}
 
@@ -788,19 +925,29 @@ function ChatPanel({
                 {stagedFiles.map((f) => (
                   <div
                     key={f.id}
-                    onClick={() => setSelectedFile(selectedFile?.id === f.id ? null : f)}
-                    className={`inline-flex items-center gap-1.5 bg-surface border rounded-lg px-2 py-1 cursor-pointer transition-colors ${selectedFile?.id === f.id
-                      ? 'border-primary/50 bg-primary/5'
-                      : 'border-outline hover:bg-surface-container-high'
-                      }`}
+                    onClick={() =>
+                      setSelectedFile(selectedFile?.id === f.id ? null : f)
+                    }
+                    className={`inline-flex items-center gap-1.5 bg-surface border rounded-lg px-2 py-1 cursor-pointer transition-colors ${
+                      selectedFile?.id === f.id
+                        ? "border-primary/50 bg-primary/5"
+                        : "border-outline hover:bg-surface-container-high"
+                    }`}
                   >
-                    <span className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}>
+                    <span
+                      className={`text-[10px] font-bold px-1 py-0.5 rounded-sm ${chipClass(f.type)}`}
+                    >
                       {chipLabel(f.type)}
                     </span>
-                    <span className="text-xs text-on-surface truncate max-w-[120px]">{f.name}</span>
+                    <span className="text-xs text-on-surface truncate max-w-[120px]">
+                      {f.name}
+                    </span>
                     <button
                       className="text-on-surface-variant hover:text-on-surface ml-0.5 transition-colors"
-                      onClick={(e: MouseEvent) => { e.stopPropagation(); removeStaged(f.id); }}
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        removeStaged(f.id);
+                      }}
                     >
                       <X size={11} />
                     </button>
@@ -823,19 +970,23 @@ function ChatPanel({
                 value={draft}
                 onChange={(e) => {
                   setDraft(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                  e.target.style.height = "auto";
+                  e.target.style.height =
+                    Math.min(e.target.scrollHeight, 120) + "px";
                 }}
                 rows={1}
                 className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 resize-none text-sm placeholder:text-on-surface-variant outline-none disabled:opacity-50 py-1.5 leading-relaxed overflow-hidden"
-                style={{ minHeight: '28px', maxHeight: '120px' }}
+                style={{ minHeight: "28px", maxHeight: "120px" }}
                 placeholder={
                   stagedFiles.length > 0
-                    ? 'Add a question about these documents…'
-                    : 'Ask anything, or drag & drop a file…'
+                    ? "Add a question about these documents…"
+                    : "Ask anything, or drag & drop a file…"
                 }
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submit();
+                  }
                 }}
               />
 
@@ -848,7 +999,9 @@ function ChatPanel({
                 </button>
 
                 <button
-                  onMouseDown={(e: MouseEvent<HTMLButtonElement>) => e.preventDefault()}
+                  onMouseDown={(e: MouseEvent<HTMLButtonElement>) =>
+                    e.preventDefault()
+                  }
                   onClick={submit}
                   disabled={!canSend}
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm hover:opacity-90 active:scale-95 transition-all duration-100 disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none"
@@ -873,7 +1026,6 @@ function ChatPanel({
           </p>
         </div>
       </div>
-
     </section>
   );
 }
@@ -888,8 +1040,13 @@ interface DocumentPreviewProps {
   isResizing: boolean;
 }
 
-function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: DocumentPreviewProps) {
-  const isPdf = selectedFile?.type === 'application/pdf';
+function DocumentPreview({
+  selectedFile,
+  setSelectedFile,
+  width,
+  isResizing,
+}: DocumentPreviewProps) {
+  const isPdf = selectedFile?.type === "application/pdf";
 
   return (
     <section
@@ -899,9 +1056,12 @@ function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: D
       {/* Toolbar */}
       <div className="preview-toolbar flex items-center justify-between px-4 border-b border-outline flex-shrink-0 bg-surface-container-low">
         <div className="flex items-center gap-2 min-w-0">
-          <FileText size={16} className="text-on-surface-variant flex-shrink-0" />
+          <FileText
+            size={16}
+            className="text-on-surface-variant flex-shrink-0"
+          />
           <span className="text-sm font-medium truncate text-primary">
-            {selectedFile ? selectedFile.name : 'Document Preview'}
+            {selectedFile ? selectedFile.name : "Document Preview"}
           </span>
         </div>
         {selectedFile && (
@@ -942,7 +1102,7 @@ function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: D
                 src={selectedFile.url}
                 alt={selectedFile.name}
                 className="w-full object-contain block"
-                style={{ minHeight: '100%' }}
+                style={{ minHeight: "100%" }}
               />
             </div>
           )}
@@ -962,7 +1122,11 @@ function DocumentPreview({ selectedFile, setSelectedFile, width, isResizing }: D
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs opacity-40 font-medium tracking-widest uppercase">
-            <span>JPG</span><span>·</span><span>PNG</span><span>·</span><span>PDF</span>
+            <span>JPG</span>
+            <span>·</span>
+            <span>PNG</span>
+            <span>·</span>
+            <span>PDF</span>
           </div>
         </div>
       )}

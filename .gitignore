@@ -18,3 +18,4 @@ test.png
 ocr/app/app_output.json
 NEXT_TASKS.md
 ocr/app/__pycache__
+ backend/temp_uploads/

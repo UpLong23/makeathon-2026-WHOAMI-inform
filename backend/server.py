@@ -5,6 +5,7 @@ Server: uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 
 import asyncio
 import json
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -12,17 +13,29 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ocr" / "app"))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from rag_pipeline.config import GEMINI_API_KEY
 from rag_pipeline.chroma_db import get_collection, build_vendor_lookup
+from rag_pipeline.config import CSV_PATH, GEMINI_API_KEY
 from rag_pipeline.normalize import load_and_normalize
-from rag_pipeline.config import CSV_PATH
 from rag_pipeline.pipeline import run_pipeline
+
+try:
+    from pipeline import process_image as ocr_process_image
+    from config import GROQ_API_KEY as OCR_GROQ_API_KEY
+    from groq import Groq
+    _ocr_client = Groq(api_key=OCR_GROQ_API_KEY)
+    print("  OCR pipeline loaded (direct)", flush=True)
+except Exception as e:
+    _ocr_client = None
+    ocr_process_image = None
+    print(f"  OCR pipeline skipped: {e}", flush=True)
+
 
 # ─────────────────────────────────────────────
 # App
@@ -45,8 +58,10 @@ print("Loading RAG pipeline components", flush=True)
 collection = get_collection()
 new_df, df_raw = load_and_normalize(CSV_PATH)
 vendor_lookup = build_vendor_lookup(new_df)
-print(f"  Collection '{collection.name}': {collection.count()} vectors", flush=True)
-print(f"  Data: {len(new_df)} invoices, {len(vendor_lookup)} vendors", flush=True)
+print(
+    f"  Collection '{collection.name}': {collection.count()} vectors", flush=True)
+print(
+    f"  Data: {len(new_df)} invoices, {len(vendor_lookup)} vendors", flush=True)
 
 classifier = None
 try:
@@ -83,6 +98,15 @@ except Exception as e:
 KAGGLE_FILE_DIR = CSV_PATH.parent / "batch1_1"
 print(f"  File directory: {KAGGLE_FILE_DIR}", flush=True)
 
+UPLOAD_DIR = Path(__file__).resolve().parent / "temp_uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+print(f"  Upload directory: {UPLOAD_DIR}", flush=True)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+OCR_CLI_PATH = PROJECT_ROOT / "ocr" / "app" / "cli.py"
+OCR_OUTPUT_PATH = PROJECT_ROOT / "ocr" / "app" / "app_output.json"
+print(f"  OCR CLI: {OCR_CLI_PATH}", flush=True)
+
 print("RAG pipeline ready.\n", flush=True)
 
 # ─────────────────────────────────────────────
@@ -94,9 +118,11 @@ _COST_PER_1K: dict[str, dict[str, float]] = {
     "auto":   {"input": 0.000125, "output": 0.000375},  # treat as gemini
 }
 
+
 def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     rates = _COST_PER_1K.get(model, _COST_PER_1K["auto"])
     return (input_tokens / 1000) * rates["input"] + (output_tokens / 1000) * rates["output"]
+
 
 def _count_tokens(text: str) -> int:
     """Rough token count: ~4 chars per token (GPT-style heuristic)."""
@@ -105,6 +131,8 @@ def _count_tokens(text: str) -> int:
 # ─────────────────────────────────────────────
 # Usage store  (in-memory; replace with DB for prod)
 # ─────────────────────────────────────────────
+
+
 class UsageRecord:
     def __init__(
         self,
@@ -113,13 +141,13 @@ class UsageRecord:
         input_tokens: int,
         output_tokens: int,
     ):
-        self.session_id   = session_id
-        self.timestamp    = datetime.now(timezone.utc).isoformat()
-        self.model        = model
+        self.session_id = session_id
+        self.timestamp = datetime.now(timezone.utc).isoformat()
+        self.model = model
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.total_tokens = input_tokens + output_tokens
-        self.cost_usd     = _estimate_cost(model, input_tokens, output_tokens)
+        self.cost_usd = _estimate_cost(model, input_tokens, output_tokens)
 
     def to_dict(self) -> dict:
         return {
@@ -132,14 +160,16 @@ class UsageRecord:
             "cost_usd":      round(self.cost_usd, 6),
         }
 
+
 # Global log — every completed chat turn appends one record
 _usage_log: list[UsageRecord] = []
 
 
 def _log_usage(session_id: str, model: str, user_msg: str, assistant_msg: str) -> None:
-    input_tokens  = _count_tokens(user_msg)
+    input_tokens = _count_tokens(user_msg)
     output_tokens = _count_tokens(assistant_msg)
-    _usage_log.append(UsageRecord(session_id, model, input_tokens, output_tokens))
+    _usage_log.append(UsageRecord(session_id, model,
+                      input_tokens, output_tokens))
 
 
 # ─────────────────────────────────────────────
@@ -153,6 +183,7 @@ class Session:
         self.last_answer: str = ""
         self.last_files: list[dict] = []
         self.open_files: dict[str, str] = {}  # filename → OCR text
+
 
 _sessions: dict[str, Session] = {}
 
@@ -178,12 +209,6 @@ def _needs_retrieval(query: str, classifier) -> bool:
 # ─────────────────────────────────────────────
 # Schemas
 # ─────────────────────────────────────────────
-class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    session_id: str = Field(default="default_user", min_length=1)
-    model: str = Field(default="auto", pattern=r"^(auto|gemini|local)$")
-
-
 class NewSessionResponse(BaseModel):
     session_id: str
 
@@ -253,17 +278,20 @@ async def _stream_rag_response(
         docs_text = "\n---\n".join(session.open_files.values())
         if session.last_query:
             docs_text += f"\n\n---\nPrevious context — the user asked: {session.last_query}"
-        prompt = ANSWER_PROMPT.format(user_query=message, documents_text=docs_text)
+        prompt = ANSWER_PROMPT.format(
+            user_query=message, documents_text=docs_text)
         answer = None
         if use_gemini_for_request:
             try:
                 from rag_pipeline.gemini_client import answer_query as gemini_answer
-                answer = gemini_answer(message, list(session.open_files.values()))
+                answer = gemini_answer(
+                    message, list(session.open_files.values()))
             except Exception as e:
                 print(f"\n[Gemini error: {e}]")
         if answer is None and llm_pipe_for_request:
             messages_in = [{"role": "user", "content": prompt}]
-            out = llm_pipe_for_request(messages_in, max_new_tokens=512, temperature=0.8)
+            out = llm_pipe_for_request(
+                messages_in, max_new_tokens=512, temperature=0.8)
             answer = out[0]["generated_text"][-1]["content"]
         if answer is None:
             answer = "No answer could be generated from the open document."
@@ -285,7 +313,7 @@ async def _stream_rag_response(
 
         session.history.append({"role": "user", "content": message})
         session.history.append({"role": "assistant", "content": full_answer})
-        session.last_query  = message
+        session.last_query = message
         session.last_answer = full_answer
         return
 
@@ -298,7 +326,7 @@ async def _stream_rag_response(
         )
 
         answer = result.get("answer", "No answer generated.")
-        steps  = result.get("steps", {})
+        steps = result.get("steps", {})
 
         docs_retrieved = result.get("docs_retrieved", set())
         files_list = []
@@ -328,23 +356,23 @@ async def _stream_rag_response(
             batch.append(word)
             answer_accumulator.append(word + " ")
             if len(batch) >= 5:
-                chunk   = " ".join(batch)
+                chunk = " ".join(batch)
                 escaped = chunk.replace("\n", "\\n")
                 yield f"data: {escaped}\n\n"
                 batch = []
                 await asyncio.sleep(0)
 
         if batch:
-            chunk   = " ".join(batch)
+            chunk = " ".join(batch)
             escaped = chunk.replace("\n", "\\n")
             yield f"data: {escaped}\n\n"
 
         full_answer = "".join(answer_accumulator).strip()
         _log_usage(session_id, model, message, full_answer)
 
-        session.last_query  = message
+        session.last_query = message
         session.last_answer = full_answer
-        session.last_files  = files_list if docs_retrieved else []
+        session.last_files = files_list if docs_retrieved else []
         session.history.append({"role": "user",      "content": message})
         session.history.append({"role": "assistant",  "content": full_answer})
 
@@ -409,7 +437,8 @@ async def open_file(session_id: str, body: OpenFileRequest) -> dict:
         raise HTTPException(status_code=404, detail="File not found")
     ocr_text = str(match.iloc[0].get("OCRed Text", ""))
     if not ocr_text or ocr_text in ("nan", "None", ""):
-        raise HTTPException(status_code=404, detail="No OCR text for this file")
+        raise HTTPException(
+            status_code=404, detail="No OCR text for this file")
     session.open_files[body.filename] = ocr_text
     return {"status": "ok", "open_files": len(session.open_files)}
 
@@ -422,11 +451,90 @@ async def close_file(session_id: str, body: OpenFileRequest) -> dict:
 
 
 @app.post("/api/chat")
-async def chat(request: ChatRequest) -> StreamingResponse:
-    if not request.message.strip():
-        raise HTTPException(status_code=422, detail="message must not be blank")
+async def chat(
+    message: str = Form(...),
+    session_id: str = Form("default_user"),
+    model: str = Form("auto"),
+    files: list[UploadFile] = File(None),
+) -> StreamingResponse:
+    print(f"Received message: {message}")
+    print(f"Session ID: {session_id}")
+    print(f"Model: {model}")
+
+    saved_paths: list[str] = []
+    ocr_results: list[dict] = []
+    if files:
+        for uploaded_file in files:
+            file_path = UPLOAD_DIR / uploaded_file.filename
+            content = await uploaded_file.read()
+            file_path.write_bytes(content)
+            saved_paths.append(str(file_path))
+            print(f"  Saved uploaded file: {file_path} ({len(content)} bytes)")
+
+            try:
+                if _ocr_client and ocr_process_image:
+                    doc = await asyncio.to_thread(
+                        ocr_process_image, str(file_path), _ocr_client
+                    )
+                    ocr_data = doc.model_dump()
+                else:
+                    result = await asyncio.to_thread(
+                        subprocess.run,
+                        ["python3", str(OCR_CLI_PATH), str(file_path), str(OCR_OUTPUT_PATH)],
+                        capture_output=True, text=True,
+                        cwd=str(PROJECT_ROOT),
+                    )
+                    print(f"  OCR stdout: {result.stdout}")
+                    if result.stderr:
+                        print(f"  OCR stderr: {result.stderr}")
+                    if OCR_OUTPUT_PATH.exists():
+                        ocr_data = json.loads(OCR_OUTPUT_PATH.read_text())
+                    else:
+                        ocr_data = {"error": "OCR subprocess failed"}
+            except Exception as e:
+                print(f"  OCR failed for {uploaded_file.filename}: {e}")
+                ocr_data = {"error": str(e)}
+            ocr_results.append(ocr_data)
+
+        session = _get_session(session_id)
+        for uploaded_file, ocr_data in zip(files, ocr_results):
+            lines = [
+                f"Invoice #{ocr_data.get('invoice_number', 'N/A')}",
+                f"Vendor: {ocr_data.get('vendor', 'N/A')}",
+                f"Date: {ocr_data.get('invoice_date', 'N/A')}",
+                f"Client: {ocr_data.get('client_name', 'N/A')}",
+                f"Subtotal: {ocr_data.get('subtotal', 'N/A')} {ocr_data.get('currency', 'EUR')}",
+                f"Tax: {ocr_data.get('tax', 'N/A')} {ocr_data.get('currency', 'EUR')}",
+                f"Total: {ocr_data.get('total', 'N/A')} {ocr_data.get('currency', 'EUR')}",
+                "",
+                "Line Items:",
+            ]
+            for i, item in enumerate(ocr_data.get("line_items", []), 1):
+                lines.append(
+                    f"  {i}. {item.get('description', '')} | "
+                    f"Qty: {item.get('quantity', '')} | "
+                    f"Net Price: {item.get('net_price', '')} {ocr_data.get('currency', 'EUR')} | "
+                    f"Net Worth: {item.get('net_worth', '')} {ocr_data.get('currency', 'EUR')} | "
+                    f"VAT: {item.get('vat', '')} | "
+                    f"Gross: {item.get('gross_worth', '')} {ocr_data.get('currency', 'EUR')}"
+                )
+
+            raw = ocr_data.get("raw_text")
+            if raw:
+                lines.append("")
+                lines.append("Raw OCR text (use only if needed):")
+                lines.append(raw)
+
+            session.open_files[uploaded_file.filename] = "\n".join(lines)
+
+    print(f"Saved {len(saved_paths)} file(s)")
+
+    if not message.strip():
+        raise HTTPException(
+            status_code=422, detail="message must not be blank")
     return StreamingResponse(
-        _stream_rag_response(request.message.strip(), request.session_id, request.model),
+        _stream_rag_response(message.strip(),
+                             session_id, model),
         media_type="text/event-stream",
         headers={
             "X-Accel-Buffering": "no",
@@ -468,10 +576,10 @@ async def get_usage(
     # Unique sessions inside the window
     session_ids = {r.session_id for r in filtered}
 
-    total_input  = sum(r.input_tokens  for r in filtered)
+    total_input = sum(r.input_tokens for r in filtered)
     total_output = sum(r.output_tokens for r in filtered)
-    total_tokens = sum(r.total_tokens  for r in filtered)
-    total_cost   = sum(r.cost_usd      for r in filtered)
+    total_tokens = sum(r.total_tokens for r in filtered)
+    total_cost = sum(r.cost_usd for r in filtered)
 
     records_out = [
         UsageRecordOut(**r.to_dict())
